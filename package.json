@@ -1,0 +1,25 @@
+{
+  "name": "pi-galaxy-analyst",
+  "version": "0.1.0",
+  "description": "Pi.dev package for Galaxy bioinformatics analysis with plan-based workflows",
+  "keywords": ["pi-package", "galaxy", "bioinformatics", "analysis", "co-scientist"],
+  "author": "Galaxy Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/galaxyproject/pi-galaxy-analyst"
+  },
+  "pi": {
+    "extensions": ["./extensions/galaxy-analyst"],
+    "skills": ["./skills"]
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.32.0",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.1.0",
+    "@types/uuid": "^9.0.0",
+    "typescript": "^5.0.0"
+  }
+}
