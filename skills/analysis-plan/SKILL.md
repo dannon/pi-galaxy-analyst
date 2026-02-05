@@ -1,13 +1,36 @@
 ---
 name: analysis-plan
 description: Core plan-based analysis protocol for Galaxy bioinformatics workflows. Use when starting any new analysis, when the user wants to analyze data in Galaxy, or when setting up a structured research workflow. This skill guides creation of analysis plans with steps, QC checkpoints, and documentation.
-version: 1.1.0
-tags: [galaxy, analysis, planning, bioinformatics, notebook]
+version: 2.0.0
+tags: [galaxy, analysis, planning, bioinformatics, notebook, lifecycle]
 ---
 
 # Plan-Based Analysis Protocol
 
 You are a Galaxy co-scientist helping researchers conduct rigorous, reproducible analyses. Follow this protocol for any analysis workflow.
+
+## Five-Phase Research Lifecycle
+
+This protocol supports a complete research lifecycle:
+
+```
+┌────────────┐   ┌────────────┐   ┌────────────┐   ┌────────────┐   ┌────────────┐
+│  Phase 1   │ → │  Phase 2   │ → │  Phase 3   │ → │  Phase 4   │ → │  Phase 5   │
+│  PROBLEM   │   │   DATA     │   │  ANALYSIS  │   │  INTERPRET │   │  PUBLISH   │
+│  DEFINE    │   │  ACQUIRE   │   │            │   │            │   │            │
+└────────────┘   └────────────┘   └────────────┘   └────────────┘   └────────────┘
+       │               │               │               │               │
+       └───────────────┴───────────────┴───────────────┴───────────────┘
+                              Unified Notebook System
+```
+
+| Phase | Focus | Key Skills |
+|-------|-------|------------|
+| 1. Problem Definition | Research question, literature | `analysis-plan` (this skill) |
+| 2. Data Acquisition | Public data, samplesheets | `data-acquisition` |
+| 3. Analysis | Tool execution, QC | `analysis-plan`, `rnaseq-analysis`, etc. |
+| 4. Interpretation | Results, biology | `result-review` |
+| 5. Publication | Methods, figures | `publication-prep` |
 
 ## When to Use This Skill
 
@@ -20,6 +43,7 @@ Use this skill when:
 
 ## Quick Reference
 
+### Core Plan Tools
 | Tool | Purpose |
 |------|---------|
 | `analysis_plan_create` | Start a new plan with research context (auto-creates notebook) |
@@ -32,6 +56,30 @@ Use this skill when:
 | `analysis_plan_summary` | Get compact plan overview |
 | `analysis_notebook_open` | Open existing notebook to resume analysis |
 | `analysis_notebook_list` | List available notebooks in directory |
+
+### Phase Management
+| Tool | Purpose |
+|------|---------|
+| `analysis_set_phase` | Transition between lifecycle phases |
+| `research_question_refine` | Refine hypothesis (Phase 1) |
+| `research_add_literature` | Add literature reference (Phase 1) |
+
+### Data Acquisition (Phase 2)
+| Tool | Purpose |
+|------|---------|
+| `data_set_source` | Set data source (GEO, SRA, local) |
+| `data_add_sample` | Register sample with metadata |
+| `data_add_file` | Register file with pairing info |
+| `data_link_galaxy` | Link to Galaxy dataset |
+| `data_generate_samplesheet` | Create pipeline samplesheet |
+
+### Publication (Phase 5)
+| Tool | Purpose |
+|------|---------|
+| `publication_init` | Start publication prep |
+| `publication_generate_methods` | Extract methods from steps |
+| `publication_add_figure` | Track figure specifications |
+| `publication_recommend_figures` | Get figure suggestions |
 
 ---
 
@@ -68,7 +116,45 @@ Tell the researcher what step they were on and offer to continue.
 
 ---
 
-## Phase 1: Intake
+## Phase Transitions
+
+Plans start in `problem_definition` phase. Transition when ready:
+
+```
+# Move to data acquisition
+analysis_set_phase(
+  phase: "data_acquisition",
+  reason: "Research question refined, ready to acquire data"
+)
+
+# Move to analysis
+analysis_set_phase(
+  phase: "analysis",
+  reason: "Data imported and organized"
+)
+
+# Move to interpretation
+analysis_set_phase(
+  phase: "interpretation",
+  reason: "Analysis complete, reviewing results"
+)
+
+# Move to publication
+analysis_set_phase(
+  phase: "publication",
+  reason: "Results interpreted, preparing manuscript"
+)
+```
+
+**Phase requirements**:
+- `problem_definition` → `data_acquisition`: Research question should be clear
+- `data_acquisition` → `analysis`: Data should be in Galaxy with provenance tracked
+- `analysis` → `interpretation`: All analysis steps should be complete
+- `interpretation` → `publication`: Results should be validated and understood
+
+---
+
+## Phase 1: Problem Definition (Intake)
 
 Before creating a plan, gather essential context from the researcher:
 
@@ -92,9 +178,64 @@ Before creating a plan, gather essential context from the researcher:
 
 **Keep asking until you have a clear picture.** Don't assume details.
 
+### Refining the Research Question
+
+Once you understand the basic question, refine it into a testable hypothesis:
+
+```
+research_question_refine(
+  hypothesis: "Treatment X causes upregulation of inflammatory pathway genes in cell line Y",
+  population: "HeLa cells",
+  intervention: "24h treatment with compound X at 10uM",
+  comparison: "DMSO vehicle control",
+  outcome: "Differential gene expression, specifically inflammatory markers"
+)
+```
+
+### Adding Literature Context
+
+If the researcher mentions relevant papers or you find key background:
+
+```
+research_add_literature(
+  title: "Compound X activates NF-kB signaling in cancer cells",
+  pmid: "12345678",
+  year: 2023,
+  relevance: "Establishes that compound X affects NF-kB, supports our hypothesis about inflammatory response"
+)
+```
+
 ---
 
-## Phase 2: Plan Creation
+## Data Acquisition Phase (if needed)
+
+If the researcher needs to find or import public data, transition to Phase 2:
+
+```
+analysis_set_phase(
+  phase: "data_acquisition",
+  reason: "Need to acquire data from GEO/SRA"
+)
+```
+
+Then use the **data-acquisition** skill for:
+- Searching GEO/SRA for relevant datasets
+- Importing data to Galaxy
+- Tracking data provenance
+- Creating samplesheets
+
+Return to plan creation after data is organized:
+
+```
+analysis_set_phase(
+  phase: "analysis",
+  reason: "Data imported and organized"
+)
+```
+
+---
+
+## Analysis Workflow: Plan Creation
 
 Once you understand the requirements, create the plan:
 
@@ -143,7 +284,7 @@ analysis_plan_add_step(
 
 ---
 
-## Phase 3: Plan Review
+## Analysis Workflow: Plan Review
 
 Present the complete plan to the researcher before proceeding:
 
@@ -163,7 +304,7 @@ analysis_plan_activate()
 
 ---
 
-## Phase 4: Step Execution
+## Analysis Workflow: Step Execution
 
 For each step, follow this cycle:
 
@@ -293,7 +434,7 @@ analysis_plan_update_step(
 
 ---
 
-## Phase 5: Iteration
+## Analysis Workflow: Iteration
 
 After completing steps, assess whether the plan needs modification:
 
@@ -313,7 +454,7 @@ After completing steps, assess whether the plan needs modification:
 
 ---
 
-## Phase 6: Reporting
+## Analysis Workflow: Reporting
 
 At analysis completion:
 
@@ -368,6 +509,44 @@ This notebook can be:
 - Used as basis for methods section
 - Shared with collaborators for review
 - Used to reproduce the analysis
+
+---
+
+## Transitioning to Interpretation (Phase 4)
+
+After analysis is complete, transition to interpretation:
+
+```
+analysis_set_phase(
+  phase: "interpretation",
+  reason: "Analysis steps complete, reviewing results"
+)
+```
+
+Use the **result-review** skill for:
+- Examining analysis outputs
+- Connecting results to biological context
+- Validating findings against expectations
+- Documenting key observations
+
+---
+
+## Transitioning to Publication (Phase 5)
+
+When results are validated and ready for publication:
+
+```
+analysis_set_phase(
+  phase: "publication",
+  reason: "Results interpreted, preparing manuscript materials"
+)
+```
+
+Use the **publication-prep** skill for:
+- Generating methods section from tool versions
+- Planning and tracking figures
+- Preparing supplementary materials
+- Data sharing preparation (GEO, Zenodo)
 
 ---
 

@@ -1,7 +1,186 @@
 /**
  * Type definitions for Galaxy analysis plan state management
+ *
+ * Supports 5-phase research lifecycle:
+ * Phase 1: Problem Definition (research question, literature)
+ * Phase 2: Data Acquisition (public data, local upload, samplesheets)
+ * Phase 3: Analysis Execution (current core functionality)
+ * Phase 4: Interpretation (biological context, pathway analysis)
+ * Phase 5: Publication Preparation (methods, figures, data sharing)
  */
 
+/**
+ * Research lifecycle phase
+ */
+export type LifecyclePhase =
+  | 'problem_definition'
+  | 'data_acquisition'
+  | 'analysis'
+  | 'interpretation'
+  | 'publication';
+
+/**
+ * Research question structure (Phase 1)
+ * Uses PICO framework for structured hypothesis
+ */
+export interface ResearchQuestion {
+  rawQuestion: string;          // Original question from researcher
+  hypothesis?: string;          // Refined testable hypothesis
+  pico?: {
+    population: string;         // What/who is being studied
+    intervention: string;       // Treatment/exposure
+    comparison?: string;        // Control/alternative
+    outcome: string;            // What we're measuring
+  };
+  literatureRefs: LiteratureReference[];
+  refinedAt?: string;           // When hypothesis was refined
+}
+
+export interface LiteratureReference {
+  pmid?: string;
+  doi?: string;
+  title: string;
+  authors?: string[];
+  year?: number;
+  journal?: string;
+  relevance: string;            // Why this paper is relevant
+  addedAt: string;
+}
+
+/**
+ * Data provenance tracking (Phase 2)
+ */
+export interface DataProvenance {
+  source: DataSource;
+  accession?: string;           // GEO/SRA accession
+  downloadDate?: string;
+  samples: SampleInfo[];
+  originalFiles: DataFile[];
+  samplesheet?: Samplesheet;
+  importHistory?: string;       // Galaxy history where data was imported
+}
+
+export type DataSource =
+  | 'geo'                       // NCBI GEO
+  | 'sra'                       // NCBI SRA
+  | 'ena'                       // European Nucleotide Archive
+  | 'arrayexpress'              // ArrayExpress
+  | 'local'                     // User uploaded
+  | 'galaxy_shared'             // Shared Galaxy data
+  | 'other';
+
+export interface SampleInfo {
+  id: string;
+  name: string;
+  condition?: string;
+  replicate?: number;
+  metadata: Record<string, string>;
+  files: string[];              // Associated file IDs
+}
+
+export interface DataFile {
+  id: string;
+  name: string;
+  type: DataFileType;
+  format?: string;              // Detected format (fastq.gz, bam, etc.)
+  size?: number;
+  readType?: 'single' | 'paired';
+  pairedWith?: string;          // ID of mate file for paired reads
+  galaxyDatasetId?: string;     // Galaxy dataset ID after import
+}
+
+export type DataFileType =
+  | 'fastq'
+  | 'bam'
+  | 'vcf'
+  | 'counts'
+  | 'annotation'
+  | 'reference'
+  | 'other';
+
+export interface Samplesheet {
+  format: 'csv' | 'tsv';
+  columns: string[];
+  rows: Record<string, string>[];
+  generatedAt: string;
+  galaxyDatasetId?: string;
+}
+
+/**
+ * Publication materials (Phase 5)
+ */
+export interface PublicationMaterials {
+  targetJournal?: string;
+  methodsDraft?: MethodsSection;
+  figures: FigureSpec[];
+  supplementaryData: SupplementaryItem[];
+  dataSharing?: DataSharingInfo;
+  status: PublicationStatus;
+}
+
+export type PublicationStatus =
+  | 'not_started'
+  | 'drafting'
+  | 'ready_for_review'
+  | 'submitted';
+
+export interface MethodsSection {
+  text: string;
+  toolVersions: ToolVersionInfo[];
+  generatedAt: string;
+  lastUpdated: string;
+}
+
+export interface ToolVersionInfo {
+  toolId: string;
+  toolName: string;
+  version: string;
+  stepId?: string;
+  parameters?: Record<string, unknown>;
+}
+
+export interface FigureSpec {
+  id: string;
+  name: string;
+  type: FigureType;
+  dataSource: string;           // Step ID or dataset ID
+  status: 'planned' | 'generated' | 'finalized';
+  galaxyDatasetId?: string;
+  description?: string;
+  suggestedTool?: string;       // Galaxy tool for generating
+}
+
+export type FigureType =
+  | 'qc_plot'
+  | 'pca'
+  | 'heatmap'
+  | 'volcano'
+  | 'ma_plot'
+  | 'pathway'
+  | 'coverage'
+  | 'alignment'
+  | 'custom';
+
+export interface SupplementaryItem {
+  id: string;
+  name: string;
+  type: 'table' | 'file' | 'dataset';
+  description: string;
+  galaxyDatasetId?: string;
+  exportFormat?: string;
+}
+
+export interface DataSharingInfo {
+  repository?: 'geo' | 'zenodo' | 'figshare' | 'other';
+  accession?: string;
+  submissionDate?: string;
+  status: 'not_started' | 'preparing' | 'submitted' | 'public';
+  preparedFiles: string[];
+}
+
+/**
+ * Main analysis plan with 5-phase lifecycle support
+ */
 export interface AnalysisPlan {
   id: string;
   title: string;
@@ -9,13 +188,22 @@ export interface AnalysisPlan {
   updated: string;      // ISO timestamp
   status: PlanStatus;
 
-  // Research context
+  // Current lifecycle phase
+  phase: LifecyclePhase;
+
+  // Research context (Phase 1 - Problem Definition)
   context: {
     researchQuestion: string;
     dataDescription: string;
     expectedOutcomes: string[];
     constraints: string[];
   };
+
+  // Structured research question (Phase 1)
+  researchQuestion?: ResearchQuestion;
+
+  // Data provenance (Phase 2 - Data Acquisition)
+  dataProvenance?: DataProvenance;
 
   // Galaxy connection context
   galaxy: {
@@ -24,10 +212,13 @@ export interface AnalysisPlan {
     serverUrl: string | null;
   };
 
-  // Analysis workflow
+  // Analysis workflow (Phase 3)
   steps: AnalysisStep[];
   decisions: DecisionEntry[];
   checkpoints: QCCheckpoint[];
+
+  // Publication materials (Phase 5)
+  publication?: PublicationMaterials;
 }
 
 export type PlanStatus = 'draft' | 'active' | 'completed' | 'abandoned';
@@ -98,7 +289,11 @@ export type DecisionType =
   | 'tool_selection'
   | 'plan_modification'
   | 'qc_decision'
-  | 'observation';
+  | 'observation'
+  | 'data_source_selection'     // Phase 2
+  | 'literature_review'         // Phase 1
+  | 'interpretation'            // Phase 4
+  | 'publication_choice';       // Phase 5
 
 export interface QCCheckpoint {
   id: string;

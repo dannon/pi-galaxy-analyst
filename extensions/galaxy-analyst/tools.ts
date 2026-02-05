@@ -23,8 +23,34 @@ import {
   getNotebookPath,
   getDefaultPath,
   syncToNotebook,
+  // Phase management
+  setPhase,
+  getPhase,
+  // Phase 1: Research question
+  setResearchQuestion,
+  addLiteratureRef,
+  // Phase 2: Data provenance
+  setDataProvenance,
+  addSample,
+  addDataFile,
+  updateDataFile,
+  // Phase 5: Publication
+  initPublication,
+  generateMethods,
+  addFigure,
+  updateFigure,
 } from "./state";
-import type { StepStatus, StepResult, DecisionType, CheckpointStatus, DatasetReference } from "./types";
+import type {
+  StepStatus,
+  StepResult,
+  DecisionType,
+  CheckpointStatus,
+  DatasetReference,
+  LifecyclePhase,
+  DataSource,
+  DataFileType,
+  FigureType,
+} from "./types";
 import * as path from "path";
 
 export function registerPlanTools(pi: ExtensionAPI): void {
@@ -798,6 +824,1001 @@ Returns title, status, progress, and last updated time for each notebook found.`
           details: { error: true },
         };
       }
+    },
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // PHASE MANAGEMENT TOOLS
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tool: Set lifecycle phase
+  // ─────────────────────────────────────────────────────────────────────────────
+  pi.registerTool({
+    name: "analysis_set_phase",
+    label: "Set Lifecycle Phase",
+    description: `Move the analysis to a different lifecycle phase. The 5 phases are:
+- problem_definition: Refining research question, literature review
+- data_acquisition: Finding/importing data, creating samplesheets
+- analysis: Executing analysis steps (core workflow)
+- interpretation: Reviewing results, biological context
+- publication: Preparing methods, figures, data sharing`,
+    parameters: Type.Object({
+      phase: Type.Union([
+        Type.Literal("problem_definition"),
+        Type.Literal("data_acquisition"),
+        Type.Literal("analysis"),
+        Type.Literal("interpretation"),
+        Type.Literal("publication"),
+      ], { description: "Target lifecycle phase" }),
+      reason: Type.Optional(Type.String({
+        description: "Reason for phase transition"
+      })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      try {
+        const previousPhase = getPhase();
+        setPhase(params.phase as LifecyclePhase);
+
+        await syncToNotebook('phase_change', {
+          phase: params.phase,
+          previousPhase,
+          reason: params.reason,
+        });
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              message: `Phase changed to ${params.phase}`,
+              previousPhase,
+              currentPhase: params.phase,
+            }, null, 2),
+          }],
+          details: { phase: params.phase },
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${(error as Error).message}` }],
+          details: { error: true },
+        };
+      }
+    },
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // PHASE 1: PROBLEM DEFINITION TOOLS
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tool: Refine research question
+  // ─────────────────────────────────────────────────────────────────────────────
+  pi.registerTool({
+    name: "research_question_refine",
+    label: "Refine Research Question",
+    description: `Refine the research question into a testable hypothesis using the PICO framework.
+PICO helps structure the question: Population, Intervention, Comparison, Outcome.`,
+    parameters: Type.Object({
+      hypothesis: Type.String({
+        description: "The refined, testable hypothesis"
+      }),
+      population: Type.Optional(Type.String({
+        description: "PICO: What/who is being studied (e.g., 'breast cancer cell lines')"
+      })),
+      intervention: Type.Optional(Type.String({
+        description: "PICO: Treatment/exposure being tested (e.g., 'drug X treatment')"
+      })),
+      comparison: Type.Optional(Type.String({
+        description: "PICO: Control/alternative (e.g., 'untreated control')"
+      })),
+      outcome: Type.Optional(Type.String({
+        description: "PICO: What we're measuring (e.g., 'gene expression changes')"
+      })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      try {
+        const pico = (params.population || params.intervention || params.outcome) ? {
+          population: params.population || '',
+          intervention: params.intervention || '',
+          comparison: params.comparison,
+          outcome: params.outcome || '',
+        } : undefined;
+
+        const question = setResearchQuestion({
+          hypothesis: params.hypothesis,
+          pico,
+        });
+
+        await syncToNotebook('frontmatter', {
+          hypothesis: params.hypothesis,
+        });
+
+        logDecision({
+          stepId: null,
+          type: 'literature_review',
+          description: `Research question refined: ${params.hypothesis}`,
+          rationale: pico ? `PICO: ${pico.population} | ${pico.intervention} | ${pico.comparison || 'N/A'} | ${pico.outcome}` : 'Hypothesis refined without PICO structure',
+          researcherApproved: true,
+        });
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              message: "Research question refined",
+              hypothesis: question.hypothesis,
+              pico: question.pico,
+            }, null, 2),
+          }],
+          details: { refined: true },
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${(error as Error).message}` }],
+          details: { error: true },
+        };
+      }
+    },
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tool: Add literature reference
+  // ─────────────────────────────────────────────────────────────────────────────
+  pi.registerTool({
+    name: "research_add_literature",
+    label: "Add Literature Reference",
+    description: `Add a literature reference to support the research question or hypothesis.
+Use this when finding relevant papers during literature review.`,
+    parameters: Type.Object({
+      title: Type.String({
+        description: "Paper title"
+      }),
+      relevance: Type.String({
+        description: "Why this paper is relevant to the research"
+      }),
+      pmid: Type.Optional(Type.String({
+        description: "PubMed ID"
+      })),
+      doi: Type.Optional(Type.String({
+        description: "Digital Object Identifier"
+      })),
+      authors: Type.Optional(Type.Array(Type.String(), {
+        description: "Author names"
+      })),
+      year: Type.Optional(Type.Number({
+        description: "Publication year"
+      })),
+      journal: Type.Optional(Type.String({
+        description: "Journal name"
+      })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      try {
+        const ref = addLiteratureRef({
+          title: params.title,
+          relevance: params.relevance,
+          pmid: params.pmid,
+          doi: params.doi,
+          authors: params.authors,
+          year: params.year,
+          journal: params.journal,
+        });
+
+        await syncToNotebook('literature_ref', {
+          title: params.title,
+          pmid: params.pmid,
+          doi: params.doi,
+          relevance: params.relevance,
+          addedAt: ref.addedAt,
+        });
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              message: `Literature reference added: ${params.title}`,
+              reference: ref,
+            }, null, 2),
+          }],
+          details: { added: true },
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${(error as Error).message}` }],
+          details: { error: true },
+        };
+      }
+    },
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // PHASE 2: DATA ACQUISITION TOOLS
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tool: Set data source
+  // ─────────────────────────────────────────────────────────────────────────────
+  pi.registerTool({
+    name: "data_set_source",
+    label: "Set Data Source",
+    description: `Initialize or update data provenance information. Call this when you know
+the source of the data (GEO, SRA, local upload, etc.).`,
+    parameters: Type.Object({
+      source: Type.Union([
+        Type.Literal("geo"),
+        Type.Literal("sra"),
+        Type.Literal("ena"),
+        Type.Literal("arrayexpress"),
+        Type.Literal("local"),
+        Type.Literal("galaxy_shared"),
+        Type.Literal("other"),
+      ], { description: "Data source type" }),
+      accession: Type.Optional(Type.String({
+        description: "Accession number (e.g., GSE12345, SRP123456)"
+      })),
+      downloadDate: Type.Optional(Type.String({
+        description: "When data was downloaded (ISO date)"
+      })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      try {
+        const provenance = setDataProvenance({
+          source: params.source as DataSource,
+          accession: params.accession,
+          downloadDate: params.downloadDate || new Date().toISOString().split('T')[0],
+        });
+
+        await syncToNotebook('data_provenance', {
+          source: params.source,
+          accession: params.accession,
+          sampleCount: provenance.samples.length,
+          fileCount: provenance.originalFiles.length,
+        });
+
+        logDecision({
+          stepId: null,
+          type: 'data_source_selection',
+          description: `Data source set: ${params.source}${params.accession ? ` (${params.accession})` : ''}`,
+          rationale: 'Data provenance tracking initialized',
+          researcherApproved: true,
+        });
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              message: `Data source set to ${params.source}`,
+              provenance,
+            }, null, 2),
+          }],
+          details: { source: params.source },
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${(error as Error).message}` }],
+          details: { error: true },
+        };
+      }
+    },
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tool: Add sample
+  // ─────────────────────────────────────────────────────────────────────────────
+  pi.registerTool({
+    name: "data_add_sample",
+    label: "Add Sample",
+    description: `Add a sample to the data provenance. Use this to track individual samples
+with their metadata and associated files.`,
+    parameters: Type.Object({
+      id: Type.String({
+        description: "Sample identifier"
+      }),
+      name: Type.String({
+        description: "Sample name"
+      }),
+      condition: Type.Optional(Type.String({
+        description: "Experimental condition (e.g., 'treated', 'control')"
+      })),
+      replicate: Type.Optional(Type.Number({
+        description: "Replicate number"
+      })),
+      metadata: Type.Optional(Type.Record(Type.String(), Type.String(), {
+        description: "Additional metadata key-value pairs"
+      })),
+      files: Type.Optional(Type.Array(Type.String(), {
+        description: "File IDs associated with this sample"
+      })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      try {
+        addSample({
+          id: params.id,
+          name: params.name,
+          condition: params.condition,
+          replicate: params.replicate,
+          metadata: params.metadata || {},
+          files: params.files || [],
+        });
+
+        const plan = getCurrentPlan();
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              message: `Sample "${params.name}" added`,
+              sampleCount: plan?.dataProvenance?.samples.length || 0,
+            }, null, 2),
+          }],
+          details: { sampleId: params.id },
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${(error as Error).message}` }],
+          details: { error: true },
+        };
+      }
+    },
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tool: Add data file
+  // ─────────────────────────────────────────────────────────────────────────────
+  pi.registerTool({
+    name: "data_add_file",
+    label: "Add Data File",
+    description: `Add a data file to the provenance. Use this to track original files
+with their types and pairing information.`,
+    parameters: Type.Object({
+      id: Type.String({
+        description: "File identifier"
+      }),
+      name: Type.String({
+        description: "File name"
+      }),
+      type: Type.Union([
+        Type.Literal("fastq"),
+        Type.Literal("bam"),
+        Type.Literal("vcf"),
+        Type.Literal("counts"),
+        Type.Literal("annotation"),
+        Type.Literal("reference"),
+        Type.Literal("other"),
+      ], { description: "File type" }),
+      format: Type.Optional(Type.String({
+        description: "File format (e.g., fastq.gz, bam)"
+      })),
+      size: Type.Optional(Type.Number({
+        description: "File size in bytes"
+      })),
+      readType: Type.Optional(Type.Union([
+        Type.Literal("single"),
+        Type.Literal("paired"),
+      ], { description: "Read type for sequencing data" })),
+      pairedWith: Type.Optional(Type.String({
+        description: "ID of mate file for paired reads (R1 <-> R2)"
+      })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      try {
+        addDataFile({
+          id: params.id,
+          name: params.name,
+          type: params.type as DataFileType,
+          format: params.format,
+          size: params.size,
+          readType: params.readType,
+          pairedWith: params.pairedWith,
+        });
+
+        const plan = getCurrentPlan();
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              message: `File "${params.name}" added`,
+              fileCount: plan?.dataProvenance?.originalFiles.length || 0,
+            }, null, 2),
+          }],
+          details: { fileId: params.id },
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${(error as Error).message}` }],
+          details: { error: true },
+        };
+      }
+    },
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tool: Link file to Galaxy dataset
+  // ─────────────────────────────────────────────────────────────────────────────
+  pi.registerTool({
+    name: "data_link_galaxy",
+    label: "Link File to Galaxy",
+    description: `Link a tracked data file to its Galaxy dataset ID after import.
+Use this after importing data into Galaxy to maintain the provenance chain.`,
+    parameters: Type.Object({
+      fileId: Type.String({
+        description: "The file ID in our provenance tracking"
+      }),
+      galaxyDatasetId: Type.String({
+        description: "The Galaxy dataset ID"
+      }),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      try {
+        const file = updateDataFile(params.fileId, {
+          galaxyDatasetId: params.galaxyDatasetId,
+        });
+
+        if (!file) {
+          return {
+            content: [{ type: "text", text: `File ${params.fileId} not found` }],
+            details: { error: true },
+          };
+        }
+
+        // Add Galaxy reference to notebook
+        const plan = getCurrentPlan();
+        if (plan?.galaxy.serverUrl) {
+          await syncToNotebook('galaxy_ref', {
+            resource: file.name,
+            id: params.galaxyDatasetId,
+            url: `${plan.galaxy.serverUrl}/datasets/${params.galaxyDatasetId}`,
+          });
+        }
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              message: `File "${file.name}" linked to Galaxy dataset ${params.galaxyDatasetId}`,
+            }, null, 2),
+          }],
+          details: { linked: true },
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${(error as Error).message}` }],
+          details: { error: true },
+        };
+      }
+    },
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tool: Generate samplesheet
+  // ─────────────────────────────────────────────────────────────────────────────
+  pi.registerTool({
+    name: "data_generate_samplesheet",
+    label: "Generate Samplesheet",
+    description: `Generate a samplesheet from tracked samples and files. The samplesheet
+can be used for nf-core pipelines or Galaxy workflows that need structured input.`,
+    parameters: Type.Object({
+      format: Type.Union([
+        Type.Literal("csv"),
+        Type.Literal("tsv"),
+      ], { description: "Output format", default: "csv" }),
+      columns: Type.Array(Type.String(), {
+        description: "Column names to include (e.g., ['sample', 'fastq_1', 'fastq_2', 'condition'])"
+      }),
+      includeMetadata: Type.Boolean({
+        description: "Include sample metadata columns",
+        default: true
+      }),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      try {
+        const plan = getCurrentPlan();
+        if (!plan?.dataProvenance) {
+          return {
+            content: [{ type: "text", text: "No data provenance set. Use data_set_source first." }],
+            details: { error: true },
+          };
+        }
+
+        const dp = plan.dataProvenance;
+        const rows: Record<string, string>[] = [];
+
+        // Build rows from samples
+        for (const sample of dp.samples) {
+          const row: Record<string, string> = {
+            sample: sample.id,
+          };
+
+          // Find associated files
+          const sampleFiles = dp.originalFiles.filter(f => sample.files.includes(f.id));
+          const r1 = sampleFiles.find(f => f.name.includes('_R1') || f.name.includes('_1.'));
+          const r2 = sampleFiles.find(f => f.name.includes('_R2') || f.name.includes('_2.'));
+
+          if (r1) row['fastq_1'] = r1.galaxyDatasetId || r1.name;
+          if (r2) row['fastq_2'] = r2.galaxyDatasetId || r2.name;
+
+          if (sample.condition) row['condition'] = sample.condition;
+          if (sample.replicate !== undefined) row['replicate'] = String(sample.replicate);
+
+          // Include metadata if requested
+          if (params.includeMetadata) {
+            Object.assign(row, sample.metadata);
+          }
+
+          rows.push(row);
+        }
+
+        // Store samplesheet
+        const samplesheet = {
+          format: params.format as 'csv' | 'tsv',
+          columns: params.columns,
+          rows,
+          generatedAt: new Date().toISOString(),
+        };
+        plan.dataProvenance.samplesheet = samplesheet;
+        plan.updated = new Date().toISOString();
+
+        // Generate text representation
+        const delimiter = params.format === 'csv' ? ',' : '\t';
+        const header = params.columns.join(delimiter);
+        const dataRows = rows.map(row =>
+          params.columns.map(col => row[col] || '').join(delimiter)
+        );
+        const content = [header, ...dataRows].join('\n');
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              message: `Samplesheet generated with ${rows.length} samples`,
+              format: params.format,
+              columns: params.columns,
+              sampleCount: rows.length,
+              content,
+            }, null, 2),
+          }],
+          details: { generated: true, sampleCount: rows.length },
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${(error as Error).message}` }],
+          details: { error: true },
+        };
+      }
+    },
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tool: Get data provenance summary
+  // ─────────────────────────────────────────────────────────────────────────────
+  pi.registerTool({
+    name: "data_get_provenance",
+    label: "Get Data Provenance",
+    description: `Get the current data provenance information including source, samples, files, and samplesheet.`,
+    parameters: Type.Object({}),
+    async execute(_toolCallId, _params, _signal, _onUpdate, _ctx) {
+      const plan = getCurrentPlan();
+
+      if (!plan?.dataProvenance) {
+        return {
+          content: [{ type: "text", text: "No data provenance set. Use data_set_source to initialize." }],
+          details: { hasProvenance: false },
+        };
+      }
+
+      const dp = plan.dataProvenance;
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            source: dp.source,
+            accession: dp.accession,
+            downloadDate: dp.downloadDate,
+            sampleCount: dp.samples.length,
+            fileCount: dp.originalFiles.length,
+            samples: dp.samples.map(s => ({
+              id: s.id,
+              name: s.name,
+              condition: s.condition,
+              fileCount: s.files.length,
+            })),
+            files: dp.originalFiles.map(f => ({
+              id: f.id,
+              name: f.name,
+              type: f.type,
+              galaxyLinked: !!f.galaxyDatasetId,
+            })),
+            hasSamplesheet: !!dp.samplesheet,
+          }, null, 2),
+        }],
+        details: { hasProvenance: true },
+      };
+    },
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // PHASE 5: PUBLICATION TOOLS
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tool: Initialize publication prep
+  // ─────────────────────────────────────────────────────────────────────────────
+  pi.registerTool({
+    name: "publication_init",
+    label: "Initialize Publication",
+    description: `Initialize publication preparation. Call this when starting to prepare
+materials for publication.`,
+    parameters: Type.Object({
+      targetJournal: Type.Optional(Type.String({
+        description: "Target journal for submission"
+      })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      try {
+        const pub = initPublication(params.targetJournal);
+
+        await syncToNotebook('publication_update', {
+          updateType: 'initialized',
+          status: pub.status,
+          description: params.targetJournal ? `Target: ${params.targetJournal}` : 'Publication prep started',
+        });
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              message: "Publication preparation initialized",
+              targetJournal: params.targetJournal,
+              status: pub.status,
+            }, null, 2),
+          }],
+          details: { initialized: true },
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${(error as Error).message}` }],
+          details: { error: true },
+        };
+      }
+    },
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tool: Generate methods section
+  // ─────────────────────────────────────────────────────────────────────────────
+  pi.registerTool({
+    name: "publication_generate_methods",
+    label: "Generate Methods",
+    description: `Generate a methods section from the completed analysis steps.
+Extracts tool IDs, parameters, and creates structured methods text.`,
+    parameters: Type.Object({
+      includeVersions: Type.Boolean({
+        description: "Attempt to include tool versions",
+        default: true
+      }),
+      style: Type.Optional(Type.Union([
+        Type.Literal("narrative"),
+        Type.Literal("structured"),
+      ], { description: "Methods style: narrative prose or structured sections" })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      try {
+        const methods = generateMethods();
+        const plan = getCurrentPlan();
+
+        await syncToNotebook('publication_update', {
+          updateType: 'methods_generated',
+          status: plan?.publication?.status,
+          description: `${methods.toolVersions.length} tools documented`,
+        });
+
+        logDecision({
+          stepId: null,
+          type: 'publication_choice',
+          description: 'Methods section generated from analysis steps',
+          rationale: `Extracted ${methods.toolVersions.length} tool references`,
+          researcherApproved: true,
+        });
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              message: "Methods section generated",
+              generatedAt: methods.generatedAt,
+              toolCount: methods.toolVersions.length,
+              text: methods.text,
+              tools: methods.toolVersions.map(t => ({
+                toolId: t.toolId,
+                toolName: t.toolName,
+                stepId: t.stepId,
+              })),
+            }, null, 2),
+          }],
+          details: { generated: true },
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${(error as Error).message}` }],
+          details: { error: true },
+        };
+      }
+    },
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tool: Add figure specification
+  // ─────────────────────────────────────────────────────────────────────────────
+  pi.registerTool({
+    name: "publication_add_figure",
+    label: "Add Figure",
+    description: `Add a figure specification for publication. Use this to track planned
+and generated figures.`,
+    parameters: Type.Object({
+      name: Type.String({
+        description: "Figure name (e.g., 'Figure 1: PCA plot')"
+      }),
+      type: Type.Union([
+        Type.Literal("qc_plot"),
+        Type.Literal("pca"),
+        Type.Literal("heatmap"),
+        Type.Literal("volcano"),
+        Type.Literal("ma_plot"),
+        Type.Literal("pathway"),
+        Type.Literal("coverage"),
+        Type.Literal("alignment"),
+        Type.Literal("custom"),
+      ], { description: "Figure type" }),
+      dataSource: Type.String({
+        description: "Step ID or dataset ID that this figure is based on"
+      }),
+      description: Type.Optional(Type.String({
+        description: "Figure description/caption"
+      })),
+      suggestedTool: Type.Optional(Type.String({
+        description: "Galaxy tool ID for generating this figure"
+      })),
+      status: Type.Optional(Type.Union([
+        Type.Literal("planned"),
+        Type.Literal("generated"),
+        Type.Literal("finalized"),
+      ], { description: "Current figure status" })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      try {
+        const figure = addFigure({
+          name: params.name,
+          type: params.type as FigureType,
+          dataSource: params.dataSource,
+          description: params.description,
+          suggestedTool: params.suggestedTool,
+          status: params.status || 'planned',
+        });
+
+        await syncToNotebook('publication_update', {
+          updateType: 'figure_added',
+          figureId: figure.id,
+          description: params.name,
+        });
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              message: `Figure "${params.name}" added`,
+              figure,
+            }, null, 2),
+          }],
+          details: { figureId: figure.id },
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${(error as Error).message}` }],
+          details: { error: true },
+        };
+      }
+    },
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tool: Update figure status
+  // ─────────────────────────────────────────────────────────────────────────────
+  pi.registerTool({
+    name: "publication_update_figure",
+    label: "Update Figure",
+    description: `Update a figure's status or link it to a Galaxy dataset.`,
+    parameters: Type.Object({
+      figureId: Type.String({
+        description: "Figure ID to update"
+      }),
+      status: Type.Optional(Type.Union([
+        Type.Literal("planned"),
+        Type.Literal("generated"),
+        Type.Literal("finalized"),
+      ], { description: "New status" })),
+      galaxyDatasetId: Type.Optional(Type.String({
+        description: "Galaxy dataset ID of the generated figure"
+      })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      try {
+        const figure = updateFigure(params.figureId, {
+          status: params.status,
+          galaxyDatasetId: params.galaxyDatasetId,
+        });
+
+        if (!figure) {
+          return {
+            content: [{ type: "text", text: `Figure ${params.figureId} not found` }],
+            details: { error: true },
+          };
+        }
+
+        await syncToNotebook('publication_update', {
+          updateType: 'figure_updated',
+          figureId: params.figureId,
+          status: params.status,
+        });
+
+        // Add Galaxy reference if dataset provided
+        if (params.galaxyDatasetId) {
+          const plan = getCurrentPlan();
+          if (plan?.galaxy.serverUrl) {
+            await syncToNotebook('galaxy_ref', {
+              resource: figure.name,
+              id: params.galaxyDatasetId,
+              url: `${plan.galaxy.serverUrl}/datasets/${params.galaxyDatasetId}`,
+            });
+          }
+        }
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              message: `Figure "${figure.name}" updated`,
+              figure,
+            }, null, 2),
+          }],
+          details: { updated: true },
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${(error as Error).message}` }],
+          details: { error: true },
+        };
+      }
+    },
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tool: Recommend figures
+  // ─────────────────────────────────────────────────────────────────────────────
+  pi.registerTool({
+    name: "publication_recommend_figures",
+    label: "Recommend Figures",
+    description: `Get figure recommendations based on the analysis type and completed steps.
+Returns suggested figures with Galaxy tools that can generate them.`,
+    parameters: Type.Object({
+      analysisType: Type.Optional(Type.Union([
+        Type.Literal("rnaseq"),
+        Type.Literal("variant_calling"),
+        Type.Literal("chipseq"),
+        Type.Literal("atacseq"),
+        Type.Literal("singlecell"),
+        Type.Literal("general"),
+      ], { description: "Type of analysis for targeted recommendations" })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      const plan = getCurrentPlan();
+      const analysisType = params.analysisType || 'general';
+
+      // Figure recommendations by analysis type
+      const recommendations: Record<string, Array<{name: string; type: FigureType; description: string; tool?: string}>> = {
+        rnaseq: [
+          { name: 'QC Summary', type: 'qc_plot', description: 'MultiQC report summarizing sample quality', tool: 'multiqc' },
+          { name: 'PCA Plot', type: 'pca', description: 'Principal component analysis of samples', tool: 'deseq2' },
+          { name: 'Sample Heatmap', type: 'heatmap', description: 'Hierarchical clustering of samples', tool: 'deseq2' },
+          { name: 'Volcano Plot', type: 'volcano', description: 'Log fold change vs significance', tool: 'volcanoplot' },
+          { name: 'MA Plot', type: 'ma_plot', description: 'Log ratio vs average expression', tool: 'deseq2' },
+          { name: 'Gene Expression Heatmap', type: 'heatmap', description: 'Top DE genes across samples', tool: 'heatmap2' },
+        ],
+        variant_calling: [
+          { name: 'QC Summary', type: 'qc_plot', description: 'MultiQC report for alignment and variant QC', tool: 'multiqc' },
+          { name: 'Coverage Plot', type: 'coverage', description: 'Read depth across regions of interest' },
+          { name: 'Variant Quality Distribution', type: 'qc_plot', description: 'Distribution of variant quality scores' },
+          { name: 'Alignment Statistics', type: 'alignment', description: 'Mapping rate, duplication, insert size' },
+        ],
+        singlecell: [
+          { name: 'QC Violin Plots', type: 'qc_plot', description: 'nGenes, nCounts, percent mito per cell' },
+          { name: 'UMAP/t-SNE', type: 'pca', description: 'Dimensionality reduction of cells' },
+          { name: 'Cluster Markers Heatmap', type: 'heatmap', description: 'Top markers per cluster' },
+          { name: 'Cell Type Composition', type: 'custom', description: 'Bar plot of cell type proportions' },
+        ],
+        general: [
+          { name: 'QC Summary', type: 'qc_plot', description: 'MultiQC report', tool: 'multiqc' },
+          { name: 'PCA Plot', type: 'pca', description: 'Principal component analysis' },
+          { name: 'Heatmap', type: 'heatmap', description: 'Hierarchical clustering visualization' },
+        ],
+      };
+
+      const figures = recommendations[analysisType] || recommendations.general;
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            analysisType,
+            completedSteps: plan?.steps.filter(s => s.status === 'completed').length || 0,
+            recommendations: figures,
+            note: "Use publication_add_figure to add these to your publication plan",
+          }, null, 2),
+        }],
+        details: { recommendationCount: figures.length },
+      };
+    },
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tool: Get publication status
+  // ─────────────────────────────────────────────────────────────────────────────
+  pi.registerTool({
+    name: "publication_get_status",
+    label: "Get Publication Status",
+    description: `Get the current publication preparation status including methods, figures, and data sharing info.`,
+    parameters: Type.Object({}),
+    async execute(_toolCallId, _params, _signal, _onUpdate, _ctx) {
+      const plan = getCurrentPlan();
+
+      if (!plan?.publication) {
+        return {
+          content: [{ type: "text", text: "Publication preparation not started. Use publication_init first." }],
+          details: { hasPublication: false },
+        };
+      }
+
+      const pub = plan.publication;
+      const figureStats = {
+        total: pub.figures.length,
+        planned: pub.figures.filter(f => f.status === 'planned').length,
+        generated: pub.figures.filter(f => f.status === 'generated').length,
+        finalized: pub.figures.filter(f => f.status === 'finalized').length,
+      };
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            status: pub.status,
+            targetJournal: pub.targetJournal,
+            hasMethods: !!pub.methodsDraft,
+            methodsToolCount: pub.methodsDraft?.toolVersions.length || 0,
+            figures: figureStats,
+            figureList: pub.figures.map(f => ({
+              id: f.id,
+              name: f.name,
+              type: f.type,
+              status: f.status,
+            })),
+            supplementaryCount: pub.supplementaryData.length,
+            dataSharing: pub.dataSharing,
+          }, null, 2),
+        }],
+        details: { hasPublication: true },
+      };
     },
   });
 }

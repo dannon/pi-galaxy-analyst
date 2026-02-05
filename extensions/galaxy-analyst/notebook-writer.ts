@@ -14,6 +14,10 @@ import type {
   QCCheckpoint,
   DatasetReference,
   StepResult,
+  LifecyclePhase,
+  ResearchQuestion,
+  DataProvenance,
+  PublicationMaterials,
 } from "./types";
 
 /**
@@ -28,6 +32,17 @@ export function slugify(title: string): string {
 }
 
 /**
+ * Phase label mapping
+ */
+const phaseLabels: Record<LifecyclePhase, string> = {
+  'problem_definition': 'Problem Definition',
+  'data_acquisition': 'Data Acquisition',
+  'analysis': 'Analysis',
+  'interpretation': 'Interpretation',
+  'publication': 'Publication',
+};
+
+/**
  * Generate complete notebook content from an AnalysisPlan
  */
 export function generateNotebook(plan: AnalysisPlan): string {
@@ -38,6 +53,7 @@ export function generateNotebook(plan: AnalysisPlan): string {
   lines.push(`plan_id: "${plan.id}"`);
   lines.push(`title: "${plan.title}"`);
   lines.push(`status: ${plan.status}`);
+  lines.push(`phase: ${plan.phase}`);
   lines.push(`created: "${plan.created}"`);
   lines.push(`updated: "${plan.updated}"`);
   lines.push("");
@@ -59,10 +75,29 @@ export function generateNotebook(plan: AnalysisPlan): string {
   lines.push(`# ${plan.title}`);
   lines.push("");
 
+  // Phase indicator
+  lines.push(`**Current Phase**: ${phaseLabels[plan.phase]}`);
+  lines.push("");
+
   // Research Context
   lines.push("## Research Context");
   lines.push("");
   lines.push(`**Research Question**: ${plan.context.researchQuestion}`);
+
+  // Hypothesis if refined (Phase 1)
+  if (plan.researchQuestion?.hypothesis) {
+    lines.push(`**Hypothesis**: ${plan.researchQuestion.hypothesis}`);
+    if (plan.researchQuestion.pico) {
+      const pico = plan.researchQuestion.pico;
+      lines.push("");
+      lines.push("**PICO Framework**:");
+      lines.push(`- Population: ${pico.population}`);
+      lines.push(`- Intervention: ${pico.intervention}`);
+      if (pico.comparison) lines.push(`- Comparison: ${pico.comparison}`);
+      lines.push(`- Outcome: ${pico.outcome}`);
+    }
+  }
+
   lines.push(`**Data Description**: ${plan.context.dataDescription}`);
   lines.push(
     `**Expected Outcomes**: ${plan.context.expectedOutcomes.join(", ")}`
@@ -71,8 +106,67 @@ export function generateNotebook(plan: AnalysisPlan): string {
     lines.push(`**Constraints**: ${plan.context.constraints.join(", ")}`);
   }
   lines.push("");
+
+  // Literature references (Phase 1)
+  if (plan.researchQuestion?.literatureRefs && plan.researchQuestion.literatureRefs.length > 0) {
+    lines.push("### Literature Background");
+    lines.push("");
+    for (const ref of plan.researchQuestion.literatureRefs) {
+      const citation = ref.pmid ? `PMID: ${ref.pmid}` : ref.doi ? `DOI: ${ref.doi}` : '';
+      lines.push(`- **${ref.title}**${ref.year ? ` (${ref.year})` : ''}`);
+      if (citation) lines.push(`  ${citation}`);
+      lines.push(`  *Relevance*: ${ref.relevance}`);
+      lines.push("");
+    }
+  }
+
   lines.push("---");
   lines.push("");
+
+  // Data Provenance (Phase 2)
+  if (plan.dataProvenance) {
+    lines.push("## Data Provenance");
+    lines.push("");
+    const dp = plan.dataProvenance;
+    lines.push(`**Source**: ${dp.source.toUpperCase()}`);
+    if (dp.accession) lines.push(`**Accession**: ${dp.accession}`);
+    if (dp.downloadDate) lines.push(`**Download Date**: ${dp.downloadDate}`);
+    lines.push("");
+
+    if (dp.samples.length > 0) {
+      lines.push("### Samples");
+      lines.push("");
+      lines.push("| ID | Name | Condition | Replicate | Files |");
+      lines.push("|-----|------|-----------|-----------|-------|");
+      for (const s of dp.samples) {
+        lines.push(`| ${s.id} | ${s.name} | ${s.condition || '-'} | ${s.replicate ?? '-'} | ${s.files.length} |`);
+      }
+      lines.push("");
+    }
+
+    if (dp.originalFiles.length > 0) {
+      lines.push("### Files");
+      lines.push("");
+      lines.push("| ID | Name | Type | Galaxy ID |");
+      lines.push("|-----|------|------|-----------|");
+      for (const f of dp.originalFiles) {
+        lines.push(`| ${f.id} | ${f.name} | ${f.type} | ${f.galaxyDatasetId || '-'} |`);
+      }
+      lines.push("");
+    }
+
+    if (dp.samplesheet) {
+      lines.push("### Samplesheet");
+      lines.push("");
+      lines.push(`Generated: ${dp.samplesheet.generatedAt}`);
+      lines.push(`Format: ${dp.samplesheet.format}`);
+      lines.push(`Columns: ${dp.samplesheet.columns.join(', ')}`);
+      lines.push("");
+    }
+
+    lines.push("---");
+    lines.push("");
+  }
 
   // Analysis Plan section
   lines.push("## Analysis Plan");
@@ -217,6 +311,91 @@ export function generateNotebook(plan: AnalysisPlan): string {
   }
 
   lines.push("");
+
+  // Publication Materials (Phase 5)
+  if (plan.publication) {
+    lines.push("---");
+    lines.push("");
+    lines.push("## Publication Materials");
+    lines.push("");
+
+    const pub = plan.publication;
+    lines.push(`**Status**: ${pub.status.replace('_', ' ')}`);
+    if (pub.targetJournal) {
+      lines.push(`**Target Journal**: ${pub.targetJournal}`);
+    }
+    lines.push("");
+
+    // Methods section
+    if (pub.methodsDraft) {
+      lines.push("### Methods Draft");
+      lines.push("");
+      lines.push(`*Generated: ${pub.methodsDraft.generatedAt}*`);
+      lines.push("");
+      lines.push(pub.methodsDraft.text);
+      lines.push("");
+
+      if (pub.methodsDraft.toolVersions.length > 0) {
+        lines.push("#### Tool Versions");
+        lines.push("");
+        lines.push("| Tool | Version | Step |");
+        lines.push("|------|---------|------|");
+        for (const t of pub.methodsDraft.toolVersions) {
+          lines.push(`| ${t.toolName} | ${t.version} | ${t.stepId || '-'} |`);
+        }
+        lines.push("");
+      }
+    }
+
+    // Figures
+    if (pub.figures.length > 0) {
+      lines.push("### Figures");
+      lines.push("");
+      lines.push("| ID | Name | Type | Status | Dataset ID |");
+      lines.push("|-----|------|------|--------|------------|");
+      for (const f of pub.figures) {
+        lines.push(`| ${f.id} | ${f.name} | ${f.type} | ${f.status} | ${f.galaxyDatasetId || '-'} |`);
+      }
+      lines.push("");
+
+      // Figure details
+      for (const f of pub.figures) {
+        if (f.description) {
+          lines.push(`**${f.id}: ${f.name}**`);
+          lines.push(f.description);
+          if (f.suggestedTool) {
+            lines.push(`*Suggested tool: ${f.suggestedTool}*`);
+          }
+          lines.push("");
+        }
+      }
+    }
+
+    // Supplementary data
+    if (pub.supplementaryData.length > 0) {
+      lines.push("### Supplementary Data");
+      lines.push("");
+      lines.push("| ID | Name | Type | Description |");
+      lines.push("|-----|------|------|-------------|");
+      for (const s of pub.supplementaryData) {
+        lines.push(`| ${s.id} | ${s.name} | ${s.type} | ${s.description} |`);
+      }
+      lines.push("");
+    }
+
+    // Data sharing
+    if (pub.dataSharing) {
+      const ds = pub.dataSharing;
+      lines.push("### Data Sharing");
+      lines.push("");
+      lines.push(`**Repository**: ${ds.repository || 'Not selected'}`);
+      lines.push(`**Status**: ${ds.status.replace('_', ' ')}`);
+      if (ds.accession) {
+        lines.push(`**Accession**: ${ds.accession}`);
+      }
+      lines.push("");
+    }
+  }
 
   return lines.join("\n");
 }

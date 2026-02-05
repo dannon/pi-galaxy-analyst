@@ -17,6 +17,11 @@ import type {
   DecisionType,
   DatasetReference,
   StepResult,
+  LifecyclePhase,
+  ResearchQuestion,
+  LiteratureReference,
+  DataProvenance,
+  PublicationMaterials,
 } from "./types";
 
 /**
@@ -39,6 +44,7 @@ export interface NotebookFrontmatter {
   plan_id: string;
   title: string;
   status: PlanStatus;
+  phase: LifecyclePhase;
   created: string;
   updated: string;
   galaxy: {
@@ -127,10 +133,17 @@ export function parseFrontmatter(content: string): NotebookFrontmatter | null {
         else if (key === "title") frontmatter.title = value;
         else if (key === "status")
           frontmatter.status = value as PlanStatus;
+        else if (key === "phase")
+          frontmatter.phase = value as LifecyclePhase;
         else if (key === "created") frontmatter.created = value;
         else if (key === "updated") frontmatter.updated = value;
       }
     }
+  }
+
+  // Default phase to 'analysis' for backwards compatibility
+  if (!frontmatter.phase) {
+    frontmatter.phase = 'analysis';
   }
 
   if (
@@ -443,6 +456,7 @@ export function notebookToPlan(notebook: ParsedNotebook): AnalysisPlan {
     created: frontmatter.created,
     updated: frontmatter.updated,
     status: frontmatter.status,
+    phase: frontmatter.phase,
     context: {
       researchQuestion: researchContext.researchQuestion,
       dataDescription: researchContext.dataDescription,

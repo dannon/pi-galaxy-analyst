@@ -20,6 +20,16 @@ import type {
   StepResult,
   DatasetReference,
   NotebookSummary,
+  LifecyclePhase,
+  ResearchQuestion,
+  LiteratureReference,
+  DataProvenance,
+  SampleInfo,
+  DataFile,
+  PublicationMaterials,
+  FigureSpec,
+  MethodsSection,
+  ToolVersionInfo,
 } from "./types";
 import {
   generateNotebook,
@@ -89,6 +99,7 @@ export function createPlan(params: {
   dataDescription: string;
   expectedOutcomes: string[];
   constraints: string[];
+  phase?: LifecyclePhase;
 }): AnalysisPlan {
   const now = new Date().toISOString();
 
@@ -98,6 +109,7 @@ export function createPlan(params: {
     created: now,
     updated: now,
     status: 'draft',
+    phase: params.phase || 'problem_definition',
     context: {
       researchQuestion: params.researchQuestion,
       dataDescription: params.dataDescription,
@@ -301,6 +313,281 @@ export function setCheckpoint(params: {
   return checkpoint;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase Management Functions
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Set the current lifecycle phase
+ */
+export function setPhase(phase: LifecyclePhase): void {
+  if (!state.currentPlan) {
+    throw new Error("No active plan");
+  }
+  state.currentPlan.phase = phase;
+  state.currentPlan.updated = new Date().toISOString();
+}
+
+/**
+ * Get the current lifecycle phase
+ */
+export function getPhase(): LifecyclePhase | null {
+  return state.currentPlan?.phase || null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 1: Research Question Functions
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Set or update the structured research question
+ */
+export function setResearchQuestion(question: Partial<ResearchQuestion>): ResearchQuestion {
+  if (!state.currentPlan) {
+    throw new Error("No active plan");
+  }
+
+  const now = new Date().toISOString();
+  const existing = state.currentPlan.researchQuestion;
+
+  state.currentPlan.researchQuestion = {
+    rawQuestion: question.rawQuestion || existing?.rawQuestion || state.currentPlan.context.researchQuestion,
+    hypothesis: question.hypothesis || existing?.hypothesis,
+    pico: question.pico || existing?.pico,
+    literatureRefs: question.literatureRefs || existing?.literatureRefs || [],
+    refinedAt: question.hypothesis ? now : existing?.refinedAt,
+  };
+
+  state.currentPlan.updated = now;
+  return state.currentPlan.researchQuestion;
+}
+
+/**
+ * Add a literature reference
+ */
+export function addLiteratureRef(ref: Omit<LiteratureReference, 'addedAt'>): LiteratureReference {
+  if (!state.currentPlan) {
+    throw new Error("No active plan");
+  }
+
+  if (!state.currentPlan.researchQuestion) {
+    state.currentPlan.researchQuestion = {
+      rawQuestion: state.currentPlan.context.researchQuestion,
+      literatureRefs: [],
+    };
+  }
+
+  const literatureRef: LiteratureReference = {
+    ...ref,
+    addedAt: new Date().toISOString(),
+  };
+
+  state.currentPlan.researchQuestion.literatureRefs.push(literatureRef);
+  state.currentPlan.updated = new Date().toISOString();
+
+  return literatureRef;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2: Data Provenance Functions
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Initialize or update data provenance
+ */
+export function setDataProvenance(provenance: Partial<DataProvenance>): DataProvenance {
+  if (!state.currentPlan) {
+    throw new Error("No active plan");
+  }
+
+  const existing = state.currentPlan.dataProvenance;
+
+  state.currentPlan.dataProvenance = {
+    source: provenance.source || existing?.source || 'local',
+    accession: provenance.accession || existing?.accession,
+    downloadDate: provenance.downloadDate || existing?.downloadDate,
+    samples: provenance.samples || existing?.samples || [],
+    originalFiles: provenance.originalFiles || existing?.originalFiles || [],
+    samplesheet: provenance.samplesheet || existing?.samplesheet,
+    importHistory: provenance.importHistory || existing?.importHistory,
+  };
+
+  state.currentPlan.updated = new Date().toISOString();
+  return state.currentPlan.dataProvenance;
+}
+
+/**
+ * Add a sample to data provenance
+ */
+export function addSample(sample: SampleInfo): void {
+  if (!state.currentPlan) {
+    throw new Error("No active plan");
+  }
+
+  if (!state.currentPlan.dataProvenance) {
+    state.currentPlan.dataProvenance = {
+      source: 'local',
+      samples: [],
+      originalFiles: [],
+    };
+  }
+
+  state.currentPlan.dataProvenance.samples.push(sample);
+  state.currentPlan.updated = new Date().toISOString();
+}
+
+/**
+ * Add a data file to provenance
+ */
+export function addDataFile(file: DataFile): void {
+  if (!state.currentPlan) {
+    throw new Error("No active plan");
+  }
+
+  if (!state.currentPlan.dataProvenance) {
+    state.currentPlan.dataProvenance = {
+      source: 'local',
+      samples: [],
+      originalFiles: [],
+    };
+  }
+
+  state.currentPlan.dataProvenance.originalFiles.push(file);
+  state.currentPlan.updated = new Date().toISOString();
+}
+
+/**
+ * Update a data file (e.g., add Galaxy dataset ID after import)
+ */
+export function updateDataFile(fileId: string, updates: Partial<DataFile>): DataFile | null {
+  if (!state.currentPlan?.dataProvenance) {
+    return null;
+  }
+
+  const file = state.currentPlan.dataProvenance.originalFiles.find(f => f.id === fileId);
+  if (!file) {
+    return null;
+  }
+
+  Object.assign(file, updates);
+  state.currentPlan.updated = new Date().toISOString();
+  return file;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 5: Publication Functions
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Initialize publication materials
+ */
+export function initPublication(targetJournal?: string): PublicationMaterials {
+  if (!state.currentPlan) {
+    throw new Error("No active plan");
+  }
+
+  state.currentPlan.publication = {
+    targetJournal,
+    figures: [],
+    supplementaryData: [],
+    status: 'not_started',
+  };
+
+  state.currentPlan.updated = new Date().toISOString();
+  return state.currentPlan.publication;
+}
+
+/**
+ * Generate methods section from plan execution
+ */
+export function generateMethods(): MethodsSection {
+  if (!state.currentPlan) {
+    throw new Error("No active plan");
+  }
+
+  const now = new Date().toISOString();
+
+  // Extract tool versions from completed steps
+  const toolVersions: ToolVersionInfo[] = state.currentPlan.steps
+    .filter(s => s.status === 'completed' && s.execution.toolId)
+    .map(s => ({
+      toolId: s.execution.toolId!,
+      toolName: s.name,
+      version: 'version_to_be_fetched', // Will be updated by tool call
+      stepId: s.id,
+      parameters: s.execution.parameters,
+    }));
+
+  // Generate methods text
+  const lines: string[] = [];
+  lines.push(`Analysis was performed using Galaxy (${state.currentPlan.galaxy.serverUrl || 'usegalaxy.org'}).`);
+  lines.push('');
+
+  for (const step of state.currentPlan.steps.filter(s => s.status === 'completed')) {
+    lines.push(`**${step.name}**: ${step.description}`);
+    if (step.execution.toolId) {
+      lines.push(`Tool: ${step.execution.toolId}`);
+    }
+    lines.push('');
+  }
+
+  const methods: MethodsSection = {
+    text: lines.join('\n'),
+    toolVersions,
+    generatedAt: now,
+    lastUpdated: now,
+  };
+
+  if (!state.currentPlan.publication) {
+    initPublication();
+  }
+  state.currentPlan.publication!.methodsDraft = methods;
+  state.currentPlan.updated = now;
+
+  return methods;
+}
+
+/**
+ * Add a figure specification
+ */
+export function addFigure(figure: Omit<FigureSpec, 'id'>): FigureSpec {
+  if (!state.currentPlan) {
+    throw new Error("No active plan");
+  }
+
+  if (!state.currentPlan.publication) {
+    initPublication();
+  }
+
+  const figureSpec: FigureSpec = {
+    ...figure,
+    id: `fig-${state.currentPlan.publication!.figures.length + 1}`,
+  };
+
+  state.currentPlan.publication!.figures.push(figureSpec);
+  state.currentPlan.updated = new Date().toISOString();
+
+  return figureSpec;
+}
+
+/**
+ * Update figure status
+ */
+export function updateFigure(figureId: string, updates: Partial<FigureSpec>): FigureSpec | null {
+  if (!state.currentPlan?.publication) {
+    return null;
+  }
+
+  const figure = state.currentPlan.publication.figures.find(f => f.id === figureId);
+  if (!figure) {
+    return null;
+  }
+
+  Object.assign(figure, updates);
+  state.currentPlan.updated = new Date().toISOString();
+  return figure;
+}
+
 /**
  * Update Galaxy connection state
  */
@@ -325,9 +612,34 @@ export function setGalaxyConnection(connected: boolean, historyId?: string, serv
 export function formatPlanSummary(plan: AnalysisPlan): string {
   const lines: string[] = [];
 
+  // Phase indicator
+  const phaseLabels: Record<LifecyclePhase, string> = {
+    'problem_definition': '📋 Problem Definition',
+    'data_acquisition': '📥 Data Acquisition',
+    'analysis': '🔬 Analysis',
+    'interpretation': '💡 Interpretation',
+    'publication': '📄 Publication',
+  };
+
   // Header
   lines.push(`**${plan.title}** [${plan.status}]`);
+  lines.push(`Phase: ${phaseLabels[plan.phase]}`);
   lines.push(`Research: ${plan.context.researchQuestion}`);
+
+  // Hypothesis if refined (Phase 1)
+  if (plan.researchQuestion?.hypothesis) {
+    lines.push(`Hypothesis: ${plan.researchQuestion.hypothesis}`);
+  }
+
+  // Data source (Phase 2)
+  if (plan.dataProvenance) {
+    const dp = plan.dataProvenance;
+    if (dp.accession) {
+      lines.push(`Data: ${dp.source.toUpperCase()} ${dp.accession} (${dp.samples.length} samples)`);
+    } else {
+      lines.push(`Data: ${dp.source} (${dp.samples.length} samples, ${dp.originalFiles.length} files)`);
+    }
+  }
 
   // Galaxy context
   if (plan.galaxy.historyId) {
@@ -339,18 +651,20 @@ export function formatPlanSummary(plan: AnalysisPlan): string {
     lines.push(`Notebook: ${state.notebookPath}`);
   }
 
-  // Steps overview
-  lines.push('');
-  lines.push('**Steps:**');
-  for (const step of plan.steps) {
-    const icon = {
-      'pending': '⬜',
-      'in_progress': '🔄',
-      'completed': '✅',
-      'skipped': '⏭️',
-      'failed': '❌',
-    }[step.status];
-    lines.push(`${icon} ${step.id}. ${step.name}`);
+  // Steps overview (Phase 3)
+  if (plan.steps.length > 0) {
+    lines.push('');
+    lines.push('**Steps:**');
+    for (const step of plan.steps) {
+      const icon = {
+        'pending': '⬜',
+        'in_progress': '🔄',
+        'completed': '✅',
+        'skipped': '⏭️',
+        'failed': '❌',
+      }[step.status];
+      lines.push(`${icon} ${step.id}. ${step.name}`);
+    }
   }
 
   // Current step details
@@ -359,6 +673,17 @@ export function formatPlanSummary(plan: AnalysisPlan): string {
     lines.push('');
     lines.push(`**Current: ${currentStep.name}**`);
     lines.push(currentStep.description);
+  }
+
+  // Publication status (Phase 5)
+  if (plan.publication) {
+    const pub = plan.publication;
+    lines.push('');
+    lines.push(`**Publication:** ${pub.status.replace('_', ' ')}`);
+    if (pub.figures.length > 0) {
+      const done = pub.figures.filter(f => f.status === 'finalized').length;
+      lines.push(`Figures: ${done}/${pub.figures.length} finalized`);
+    }
   }
 
   // Recent decisions (last 3)
@@ -470,7 +795,17 @@ export async function saveNotebook(): Promise<void> {
  * This is more efficient than regenerating the entire notebook
  */
 export async function syncToNotebook(
-  changeType: 'frontmatter' | 'step_added' | 'step_updated' | 'decision' | 'checkpoint' | 'galaxy_ref',
+  changeType:
+    | 'frontmatter'
+    | 'step_added'
+    | 'step_updated'
+    | 'decision'
+    | 'checkpoint'
+    | 'galaxy_ref'
+    | 'phase_change'
+    | 'literature_ref'
+    | 'data_provenance'
+    | 'publication_update',
   data: Record<string, unknown>
 ): Promise<void> {
   if (!state.notebookPath) {
@@ -538,6 +873,58 @@ export async function syncToNotebook(
           resource: String(data.resource),
           id: String(data.id),
           url: String(data.url),
+        });
+        break;
+
+      case 'phase_change':
+        content = updateFrontmatter(content, 'phase', String(data.phase));
+        content = appendEvent(content, {
+          type: 'event',
+          timestamp: new Date().toISOString(),
+          data: {
+            description: `Phase changed to ${data.phase}`,
+            previous_phase: data.previousPhase,
+            new_phase: data.phase,
+          },
+        });
+        break;
+
+      case 'literature_ref':
+        content = appendEvent(content, {
+          type: 'event',
+          timestamp: String(data.addedAt || new Date().toISOString()),
+          data: {
+            description: `Literature reference added: ${data.title}`,
+            pmid: data.pmid,
+            doi: data.doi,
+            relevance: data.relevance,
+          },
+        });
+        break;
+
+      case 'data_provenance':
+        content = appendEvent(content, {
+          type: 'event',
+          timestamp: new Date().toISOString(),
+          data: {
+            description: `Data provenance updated`,
+            source: data.source,
+            accession: data.accession,
+            sample_count: data.sampleCount,
+            file_count: data.fileCount,
+          },
+        });
+        break;
+
+      case 'publication_update':
+        content = appendEvent(content, {
+          type: 'event',
+          timestamp: new Date().toISOString(),
+          data: {
+            description: `Publication ${data.updateType}: ${data.description || ''}`,
+            status: data.status,
+            figure_id: data.figureId,
+          },
         });
         break;
     }

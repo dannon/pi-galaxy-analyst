@@ -4,14 +4,25 @@ A [Pi.dev](https://pi.dev) package that transforms Pi into a Galaxy-focused co-s
 
 ## What It Does
 
-Pi-Galaxy-Analyst provides **plan-based analysis** — a structured approach to bioinformatics workflows where the agent:
+Pi-Galaxy-Analyst provides a **complete research lifecycle platform** — a structured approach to bioinformatics workflows covering everything from problem definition through publication:
 
-1. **Understands** your research question and data
-2. **Creates** a structured analysis plan
-3. **Executes** steps using Galaxy tools and workflows
-4. **Validates** results at QC checkpoints
-5. **Documents** every decision and observation
-6. **Iterates** based on findings
+```
+┌────────────┐   ┌────────────┐   ┌────────────┐   ┌────────────┐   ┌────────────┐
+│  Phase 1   │ → │  Phase 2   │ → │  Phase 3   │ → │  Phase 4   │ → │  Phase 5   │
+│  PROBLEM   │   │   DATA     │   │  ANALYSIS  │   │  INTERPRET │   │  PUBLISH   │
+│  DEFINE    │   │  ACQUIRE   │   │            │   │            │   │            │
+└────────────┘   └────────────┘   └────────────┘   └────────────┘   └────────────┘
+```
+
+### The Five Phases
+
+| Phase | What Happens | Key Tools |
+|-------|--------------|-----------|
+| **1. Problem Definition** | Refine research question, review literature | `research_question_refine`, `research_add_literature` |
+| **2. Data Acquisition** | Find public data, import to Galaxy, create samplesheets | `data_set_source`, `data_generate_samplesheet` |
+| **3. Analysis** | Execute tools/workflows with QC checkpoints | `analysis_plan_*`, Galaxy MCP tools |
+| **4. Interpretation** | Review results, biological context, pathway analysis | `result-review` skill |
+| **5. Publication** | Generate methods, track figures, prepare data sharing | `publication_generate_methods`, `publication_add_figure` |
 
 The agent works WITH you, not FOR you — you make the decisions, it helps execute them rigorously.
 
@@ -156,20 +167,45 @@ Pi: I'll help you set up a structured RNA-seq differential expression analysis..
 | `/status` | Show Galaxy connection and plan status |
 | `/plan` | View current analysis plan summary |
 | `/plan-decisions` | View recent decisions in the analysis |
+| `/notebook` | View notebook info or list available notebooks |
 
 ### Skills Provided
 
-| Skill | When Used |
-|-------|-----------|
-| `analysis-plan` | Starting any new analysis, creating structured plans |
-| `rnaseq-analysis` | RNA-seq differential expression workflows |
-| `data-assessment` | Inspecting and validating data |
-| `result-review` | Interpreting and summarizing results |
+| Skill | Phase | Purpose |
+|-------|-------|---------|
+| `analysis-plan` | 1-5 | Core plan-based protocol, phase transitions |
+| `data-acquisition` | 2 | GEO/SRA search, Galaxy import, samplesheets |
+| `rnaseq-analysis` | 3 | RNA-seq differential expression workflows |
+| `data-assessment` | 3 | Inspecting and validating data |
+| `result-review` | 4 | Results interpretation, pathway analysis |
+| `publication-prep` | 5 | Methods, figures, data sharing prep |
 
 ### Custom Tools
 
-The extension registers these tools for plan management:
+The extension registers tools for each phase:
 
+#### Phase Management
+| Tool | Purpose |
+|------|---------|
+| `analysis_set_phase` | Transition between lifecycle phases |
+
+#### Phase 1: Problem Definition
+| Tool | Purpose |
+|------|---------|
+| `research_question_refine` | Refine hypothesis with PICO framework |
+| `research_add_literature` | Add literature reference |
+
+#### Phase 2: Data Acquisition
+| Tool | Purpose |
+|------|---------|
+| `data_set_source` | Set data source (GEO, SRA, local) |
+| `data_add_sample` | Register sample with metadata |
+| `data_add_file` | Register file with pairing info |
+| `data_link_galaxy` | Link to Galaxy dataset |
+| `data_generate_samplesheet` | Create pipeline samplesheet |
+| `data_get_provenance` | View data provenance summary |
+
+#### Phase 3: Analysis
 | Tool | Purpose |
 |------|---------|
 | `analysis_plan_create` | Create new analysis plan |
@@ -179,22 +215,35 @@ The extension registers these tools for plan management:
 | `analysis_step_log` | Log decisions |
 | `analysis_checkpoint` | Create QC checkpoints |
 
+#### Phase 5: Publication
+| Tool | Purpose |
+|------|---------|
+| `publication_init` | Start publication prep |
+| `publication_generate_methods` | Generate methods from analysis |
+| `publication_add_figure` | Track figure specifications |
+| `publication_update_figure` | Update figure status |
+| `publication_recommend_figures` | Get figure suggestions |
+| `publication_get_status` | View publication status |
+
 ## Architecture
 
 ```
-┌─────────────────────────────────────────┐
-│           pi-galaxy-analyst             │
-│  ┌─────────────┐  ┌─────────────────┐  │
-│  │ Extensions  │  │     Skills      │  │
-│  │ - state     │  │ - analysis-plan │  │
-│  │ - tools     │  │ - rnaseq        │  │
-│  │ - context   │  │ - data-assess   │  │
-│  └─────────────┘  └─────────────────┘  │
-│            │                            │
-│    ┌───────┴───────┐                   │
-│    │ galaxy-skills │ (knowledge ref)   │
-│    └───────────────┘                   │
-└────────────┬────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                  pi-galaxy-analyst                       │
+│  ┌──────────────────┐  ┌────────────────────────────┐  │
+│  │    Extensions    │  │          Skills            │  │
+│  │ - state.ts       │  │ - analysis-plan            │  │
+│  │ - tools.ts       │  │ - data-acquisition         │  │
+│  │ - types.ts       │  │ - rnaseq-analysis          │  │
+│  │ - context.ts     │  │ - data-assessment          │  │
+│  │ - notebook-*.ts  │  │ - result-review            │  │
+│  └──────────────────┘  │ - publication-prep         │  │
+│            │           └────────────────────────────┘  │
+│    ┌───────┴───────┐                                   │
+│    │ Notebook      │ (persistent markdown files)       │
+│    │ System        │                                   │
+│    └───────────────┘                                   │
+└────────────┬───────────────────────────────────────────┘
              │ pi-mcp-adapter
              ▼
       ┌─────────────┐
@@ -203,39 +252,106 @@ The extension registers these tools for plan management:
              ▼
       ┌─────────────┐
       │   Galaxy    │
+      │ (6000+ tools)│
       └─────────────┘
 ```
 
 ## Example Session
 
 ```
-You: I want to analyze some RNA-seq data
+You: I want to analyze some RNA-seq data from GEO
 
-Pi: I'd be happy to help you set up an RNA-seq analysis. Let me ask a few questions first:
+Pi: I'd be happy to help! Let me start by understanding your research question.
 
-1. What's your research question - what are you trying to learn from this data?
-2. What data do you have? (Number of samples, conditions, paired/single-end?)
-3. What organism and which reference genome should we use?
-4. What's your comparison design (e.g., treatment vs control)?
+    What biological question are you investigating? What do you hope to learn
+    from this dataset?
 
-You: I'm studying gene expression changes after drug treatment in human cells.
-     I have 6 samples - 3 treated, 3 DMSO control. Paired-end, 150bp.
-     Human, GRCh38. Want to find genes changed by the drug.
+You: I want to see if drug X affects inflammatory gene expression in cancer cells
 
-Pi: Got it. Let me create an analysis plan...
+Pi: Got it. Let me refine that into a testable hypothesis...
+    [Uses research_question_refine with PICO framework]
 
-[Creates plan with steps: QC → Trimming → Alignment → Quantification → DE Analysis]
+    Hypothesis: "Drug X treatment causes differential expression of inflammatory
+    pathway genes in cancer cell lines"
 
-Here's the proposed plan. Should I walk through each step, or does this look good to proceed?
+    Now, what GEO dataset are you working with?
 
-You: Looks good, let's start
+You: GSE164073
 
-Pi: [Activates plan, begins Step 1]
-    Starting Step 1: Raw Read Quality Assessment
+Pi: I'll set up the data provenance tracking and import the data...
+    [Uses data_set_source, data_add_sample, Galaxy MCP to import]
 
-    I'll run FastQC on your FASTQ files. First, let me connect to Galaxy and
-    upload your data...
+    Data imported. I've created a samplesheet with 6 samples (3 treated, 3 control).
+    Ready to create the analysis plan?
+
+You: Yes, let's do RNA-seq DE analysis
+
+Pi: [Creates structured plan with QC → Alignment → Quantification → DE steps]
+    [Works through each step with researcher approval]
+    [Documents all decisions in notebook]
+
+    Analysis complete. Key finding: 847 DE genes (FDR<0.05), strong enrichment
+    for inflammatory response pathways.
+
+    Ready to prepare publication materials?
+
+You: Yes
+
+Pi: [Transitions to publication phase]
+    [Generates methods section from tool versions]
+    [Recommends figures: PCA, volcano plot, pathway enrichment]
+    [Tracks figure generation in Galaxy]
 ```
+
+## Notebook System
+
+All analysis state is persisted to markdown notebook files:
+
+```markdown
+---
+plan_id: "abc123"
+title: "Drug X RNA-seq Analysis"
+status: active
+phase: analysis
+---
+
+# Drug X RNA-seq Analysis
+
+**Current Phase**: Analysis
+
+## Research Context
+**Research Question**: Does drug X affect inflammatory gene expression?
+**Hypothesis**: Drug X treatment causes differential expression of inflammatory genes
+
+## Data Provenance
+**Source**: GEO
+**Accession**: GSE164073
+
+| ID | Name | Condition |
+|----|------|-----------|
+| SRR1 | Sample1 | treated |
+...
+
+## Analysis Plan
+### Step 1: Quality Control
+[YAML block with status, inputs, outputs]
+...
+
+## Execution Log
+[Complete audit trail of all decisions]
+
+## Galaxy References
+[Links to Galaxy datasets and history]
+
+## Publication Materials
+[Methods draft, figure tracking]
+```
+
+Notebooks can be:
+- Opened in any text editor or GitHub
+- Used to resume analysis across sessions
+- Shared with collaborators for review
+- Used to reproduce the analysis
 
 ## Contributing
 
