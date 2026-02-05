@@ -153,6 +153,101 @@ export default function galaxyAnalystExtension(pi: ExtensionAPI): void {
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // Register /connect command for Galaxy connection with interactive prompt
+  // ─────────────────────────────────────────────────────────────────────────────
+  pi.registerCommand("connect", {
+    description: "Connect to Galaxy server (prompts for credentials if not set)",
+    handler: async (_args, ctx) => {
+      // Check environment variables first
+      let galaxyUrl = process.env.GALAXY_URL;
+      let apiKey = process.env.GALAXY_API_KEY;
+
+      // If not set, prompt interactively
+      if (!galaxyUrl) {
+        galaxyUrl = await ctx.ui.input(
+          "Galaxy Server URL",
+          "https://usegalaxy.org"
+        );
+        if (!galaxyUrl) {
+          ctx.ui.notify("Connection cancelled", "warning");
+          return;
+        }
+      }
+
+      if (!apiKey) {
+        ctx.ui.notify(
+          "To get your API key: Log into Galaxy → User → Preferences → Manage API Key",
+          "info"
+        );
+        apiKey = await ctx.ui.input("Galaxy API Key");
+        if (!apiKey) {
+          ctx.ui.notify("Connection cancelled - API key required", "warning");
+          return;
+        }
+      }
+
+      // Set for this session
+      process.env.GALAXY_URL = galaxyUrl;
+      process.env.GALAXY_API_KEY = apiKey;
+
+      ctx.ui.notify(`Connecting to ${galaxyUrl}...`, "info");
+
+      // Send message to trigger the agent to call mcp__galaxy__connect
+      pi.sendUserMessage(
+        `Please connect to Galaxy at ${galaxyUrl} using the API key from environment variables.`
+      );
+    },
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Register /status command for quick Galaxy status check
+  // ─────────────────────────────────────────────────────────────────────────────
+  pi.registerCommand("status", {
+    description: "Show Galaxy connection and plan status",
+    handler: async (_args, ctx) => {
+      const state = getState();
+      const plan = getCurrentPlan();
+
+      const lines: string[] = [];
+      lines.push("🔬 Galaxy Analyst Status");
+      lines.push("");
+
+      // Connection status
+      if (state.galaxyConnected) {
+        lines.push(`✅ Connected to Galaxy`);
+        if (process.env.GALAXY_URL) {
+          lines.push(`   Server: ${process.env.GALAXY_URL}`);
+        }
+        if (state.currentHistoryId) {
+          lines.push(`   History: ${state.currentHistoryId}`);
+        }
+      } else {
+        lines.push("⚪ Not connected to Galaxy");
+        lines.push("   Use /connect or ask to connect");
+      }
+
+      lines.push("");
+
+      // Plan status
+      if (plan) {
+        const completed = plan.steps.filter(s => s.status === 'completed').length;
+        const current = plan.steps.find(s => s.status === 'in_progress');
+        lines.push(`📋 Plan: ${plan.title}`);
+        lines.push(`   Status: ${plan.status}`);
+        lines.push(`   Progress: ${completed}/${plan.steps.length} steps`);
+        if (current) {
+          lines.push(`   Current: ${current.name}`);
+        }
+      } else {
+        lines.push("📋 No active plan");
+        lines.push("   Start by describing your analysis");
+      }
+
+      ctx.ui.setWidget("status-view", lines);
+    },
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // Monitor tool calls for Galaxy connection state
   // ─────────────────────────────────────────────────────────────────────────────
   pi.on("tool_result", async (event, _ctx) => {

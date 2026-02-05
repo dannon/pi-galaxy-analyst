@@ -15,34 +15,65 @@ Pi-Galaxy-Analyst provides **plan-based analysis** — a structured approach to 
 
 The agent works WITH you, not FOR you — you make the decisions, it helps execute them rigorously.
 
-## Installation
+## Quick Start
+
+### One-Line Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/galaxyproject/pi-galaxy-analyst/main/install.sh | bash
+```
+
+Then run:
+```bash
+galaxy-analyst
+```
+
+The first time you run it, you'll be prompted for your Galaxy server URL and API key.
+
+### What Gets Installed
+
+- **Pi coding agent** — The AI agent framework
+- **pi-mcp-adapter** — Connects Pi to MCP servers
+- **galaxy-mcp** — MCP server for Galaxy API
+- **pi-galaxy-analyst** — This package (skills + extensions)
+
+## Manual Installation
+
+If you prefer to install components separately:
 
 ### Prerequisites
 
-1. [Pi coding agent](https://github.com/badlogic/pi-mono) installed
-2. [pi-mcp-adapter](https://www.npmjs.com/package/pi-mcp-adapter) for Galaxy MCP connection
-3. [galaxy-mcp](https://github.com/galaxyproject/galaxy-mcp) server running
+1. Node.js 18+
+2. [Pi coding agent](https://github.com/badlogic/pi-mono)
+3. [uv](https://github.com/astral-sh/uv) or Python 3.10+
 
-### Install the Package
+### Install Steps
 
 ```bash
-# Install pi-galaxy-analyst
-pi install git:github.com/galaxyproject/pi-galaxy-analyst
+# 1. Install Pi if needed
+npm install -g @mariozechner/pi-coding-agent
 
-# Optionally install galaxy-skills for reference documentation
-pi install git:github.com/galaxyproject/galaxy-skills
+# 2. Install pi-mcp-adapter
+pi install npm:pi-mcp-adapter
+
+# 3. Clone and install pi-galaxy-analyst
+git clone https://github.com/galaxyproject/pi-galaxy-analyst.git
+pi install git:./pi-galaxy-analyst
+
+# 4. Clone galaxy-mcp
+git clone https://github.com/galaxyproject/galaxy-mcp.git ~/.galaxy-mcp
 ```
 
 ### Configure Galaxy MCP
 
-Add to `~/.pi/agent/mcp.json`:
+Create `~/.pi/agent/mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "galaxy": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/galaxy-mcp", "galaxy-mcp"],
+      "args": ["run", "--directory", "~/.galaxy-mcp", "galaxy-mcp"],
       "lifecycle": "lazy",
       "directTools": [
         "connect", "get_histories", "create_history",
@@ -57,11 +88,15 @@ Add to `~/.pi/agent/mcp.json`:
 }
 ```
 
-Set your Galaxy credentials:
+### Set Galaxy Credentials
+
+Either via environment:
 ```bash
 export GALAXY_URL="https://usegalaxy.org"
 export GALAXY_API_KEY="your-api-key"
 ```
+
+Or use `/connect` command after starting — it will prompt you interactively.
 
 ## Usage
 
@@ -81,6 +116,8 @@ Pi: I'll help you set up a structured RNA-seq differential expression analysis..
 
 | Command | Description |
 |---------|-------------|
+| `/connect` | Connect to Galaxy (prompts for credentials if not set) |
+| `/status` | Show Galaxy connection and plan status |
 | `/plan` | View current analysis plan summary |
 | `/plan-decisions` | View recent decisions in the analysis |
 
