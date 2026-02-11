@@ -142,8 +142,29 @@ Set up one of the following:
   process.exit(1);
 }
 
+// If models.json has a custom provider, inject --provider/--model so Pi uses it
+// instead of auto-detecting from env vars. User CLI flags still override.
+const userArgs = process.argv.slice(2);
+const providerArgs = [];
+if (!userArgs.includes("--provider") && !userArgs.some(a => a.startsWith("--provider="))) {
+  const modelsPath = join(agentDir, "models.json");
+  if (existsSync(modelsPath)) {
+    try {
+      const models = JSON.parse(readFileSync(modelsPath, "utf-8"));
+      const providers = models.providers || {};
+      const [providerName, providerConfig] = Object.entries(providers)[0] || [];
+      if (providerName && providerConfig?.models?.length) {
+        providerArgs.push("--provider", providerName);
+        if (!userArgs.includes("--model") && !userArgs.some(a => a.startsWith("--model="))) {
+          providerArgs.push("--model", providerConfig.models[0].id);
+        }
+      }
+    } catch {}
+  }
+}
+
 // Build args: inject both extensions, pass through everything else
-const args = ["-e", mcpAdapterPath, "-e", extensionPath, ...process.argv.slice(2)];
+const args = ["-e", mcpAdapterPath, "-e", extensionPath, ...providerArgs, ...userArgs];
 
 checkLLMProvider();
 main(args);
