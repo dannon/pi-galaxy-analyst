@@ -90,26 +90,27 @@ export default function galaxyAnalystExtension(pi: ExtensionAPI): void {
     const plan = getCurrentPlan();
     const hasCredentials = process.env.GALAXY_URL && process.env.GALAXY_API_KEY;
 
+    const connectInstr = hasCredentials
+      ? ` Call galaxy_connect(url="${process.env.GALAXY_URL}", api_key="${process.env.GALAXY_API_KEY}") in this response.` +
+        ` ONLY call galaxy_connect — do NOT call any other Galaxy tools (no get_tool_panel, no get_server_info, no search_tools, etc.).`
+      : "";
+
     if (plan) {
       // Existing analysis — recap it
       const completed = plan.steps.filter(s => s.status === 'completed').length;
       const current = plan.steps.find(s => s.status === 'in_progress');
-      const connectNote = hasCredentials
-        ? `Also call galaxy_connect(url="${process.env.GALAXY_URL}", api_key="${process.env.GALAXY_API_KEY}") in the same response.`
-        : "";
       pi.sendUserMessage(
         `Session started with an existing analysis plan loaded: "${plan.title}" (${completed}/${plan.steps.length} steps complete` +
         `${current ? `, currently on: ${current.name}` : ""}).` +
         ` Give a brief welcome, then recap where we left off — what's been done, what's next, and any open questions. ` +
-        `Keep it concise (a short paragraph, not a bulleted list). ${connectNote}`
+        `Keep it concise (a short paragraph, not a bulleted list).${connectInstr}`
       );
     } else if (hasCredentials) {
       // Fresh session with Galaxy credentials
       pi.sendUserMessage(
         `Session started, no existing analysis in this directory. ` +
         `Give a brief welcome to gxypi, then ask what I'd like to work on — what research question or data do I have? ` +
-        `Keep the greeting to 2-3 sentences. ` +
-        `Also call galaxy_connect(url="${process.env.GALAXY_URL}", api_key="${process.env.GALAXY_API_KEY}") in the same response.`
+        `Keep the greeting to 2-3 sentences.${connectInstr}`
       );
     } else {
       // Fresh session, no credentials
