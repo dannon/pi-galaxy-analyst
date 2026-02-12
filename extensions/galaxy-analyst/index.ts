@@ -82,15 +82,37 @@ export default function galaxyAnalystExtension(pi: ExtensionAPI): void {
       // Session manager may not be available in all contexts
     }
 
-    // Kick off an initial LLM turn: greet and auto-connect if credentials are present
+    // Kick off an initial LLM turn with a proper greeting
+    const plan = getCurrentPlan();
     const hasCredentials = process.env.GALAXY_URL && process.env.GALAXY_API_KEY;
-    if (hasCredentials) {
+
+    if (plan) {
+      // Existing analysis — recap it
+      const completed = plan.steps.filter(s => s.status === 'completed').length;
+      const current = plan.steps.find(s => s.status === 'in_progress');
+      const connectNote = hasCredentials
+        ? `Also call galaxy_connect(url="${process.env.GALAXY_URL}", api_key="${process.env.GALAXY_API_KEY}") in the same response.`
+        : "";
       pi.sendUserMessage(
-        "Session started. Connect to Galaxy and introduce yourself briefly."
+        `Session started with an existing analysis plan loaded: "${plan.title}" (${completed}/${plan.steps.length} steps complete` +
+        `${current ? `, currently on: ${current.name}` : ""}).` +
+        ` Give a brief welcome, then recap where we left off — what's been done, what's next, and any open questions. ` +
+        `Keep it concise (a short paragraph, not a bulleted list). ${connectNote}`
+      );
+    } else if (hasCredentials) {
+      // Fresh session with Galaxy credentials
+      pi.sendUserMessage(
+        `Session started, no existing analysis in this directory. ` +
+        `Give a brief welcome to gxypi, then ask what I'd like to work on — what research question or data do I have? ` +
+        `Keep the greeting to 2-3 sentences. ` +
+        `Also call galaxy_connect(url="${process.env.GALAXY_URL}", api_key="${process.env.GALAXY_API_KEY}") in the same response.`
       );
     } else {
+      // Fresh session, no credentials
       pi.sendUserMessage(
-        "Session started. Introduce yourself briefly and let me know I can use /connect to set up a Galaxy server."
+        `Session started, no existing analysis in this directory and no Galaxy server configured. ` +
+        `Give a brief welcome to gxypi, mention I can use /connect to set up a Galaxy server, ` +
+        `and ask what I'd like to work on. Keep it to 2-3 sentences.`
       );
     }
   });
@@ -444,7 +466,7 @@ export default function galaxyAnalystExtension(pi: ExtensionAPI): void {
   // ─────────────────────────────────────────────────────────────────────────────
   pi.on("tool_result", async (event, _ctx) => {
     // Watch for galaxy connect results to update our state
-    if (event.toolName === "mcp__galaxy__connect" || event.toolName === "galaxy__connect") {
+    if (event.toolName === "galaxy_connect") {
       try {
         const firstContent = event.content?.[0];
         const resultText = firstContent && 'text' in firstContent ? firstContent.text : undefined;
@@ -458,7 +480,7 @@ export default function galaxyAnalystExtension(pi: ExtensionAPI): void {
     }
 
     // Watch for history creation
-    if (event.toolName === "mcp__galaxy__create_history" || event.toolName === "galaxy__create_history") {
+    if (event.toolName === "galaxy_create_history") {
       try {
         const firstContent = event.content?.[0];
         const resultText = firstContent && 'text' in firstContent ? firstContent.text : undefined;

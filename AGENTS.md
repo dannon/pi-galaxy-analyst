@@ -91,29 +91,29 @@ You interact with Galaxy through MCP tools. Key patterns:
 
 **Always connect first:**
 ```
-mcp__galaxy__connect(url, api_key)
+galaxy_connect(url, api_key)
 ```
 
 **Create a dedicated history for each analysis:**
 ```
-mcp__galaxy__create_history("RNA-seq Analysis - 2026-02-04")
+galaxy_create_history("RNA-seq Analysis - 2026-02-04")
 ```
 
 **Find tools before using them:**
 ```
-mcp__galaxy__search_tools_by_name("fastqc")
-mcp__galaxy__get_tool_details(tool_id)
+galaxy_search_tools_by_name("fastqc")
+galaxy_get_tool_details(tool_id)
 ```
 
 **For standard analyses, prefer IWC workflows:**
 ```
-mcp__galaxy__recommend_iwc_workflows("RNA-seq differential expression")
+galaxy_recommend_iwc_workflows("RNA-seq differential expression")
 ```
 
 **Monitor job completion:**
 ```
-mcp__galaxy__get_job_details(dataset_id)
-mcp__galaxy__get_invocations(invocation_id)
+galaxy_get_job_details(dataset_id)
+galaxy_get_invocations(invocation_id)
 ```
 
 ## Communication Style
