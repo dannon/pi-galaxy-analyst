@@ -1,7 +1,7 @@
 /**
  * Galaxy server profile management
  *
- * Stores named profiles in ~/.pi/agent/galaxy-profiles.json.
+ * Stores named profiles in the `galaxy` section of ~/.gxypi/config.json.
  * Each profile holds a URL + API key. The active profile's credentials
  * are synced to mcp.json's env block so the Galaxy MCP server sees them.
  */
@@ -9,6 +9,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { loadConfig, saveConfig } from "./config";
 
 export interface GalaxyProfile {
   url: string;
@@ -20,34 +21,24 @@ export interface GalaxyProfiles {
   profiles: Record<string, GalaxyProfile>;
 }
 
-function agentDir(): string {
-  return process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), ".pi", "agent");
-}
-
-export function getProfilesPath(): string {
-  return path.join(agentDir(), "galaxy-profiles.json");
-}
-
 export function loadProfiles(): GalaxyProfiles {
-  const p = getProfilesPath();
-  if (fs.existsSync(p)) {
-    try {
-      const data = JSON.parse(fs.readFileSync(p, "utf-8"));
-      return {
-        active: data.active ?? null,
-        profiles: data.profiles ?? {},
-      };
-    } catch {
-      return { active: null, profiles: {} };
-    }
+  const config = loadConfig();
+  if (config.galaxy) {
+    return {
+      active: config.galaxy.active ?? null,
+      profiles: config.galaxy.profiles ?? {},
+    };
   }
   return { active: null, profiles: {} };
 }
 
 function writeProfiles(profiles: GalaxyProfiles): void {
-  const p = getProfilesPath();
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, JSON.stringify(profiles, null, 2));
+  const config = loadConfig();
+  config.galaxy = {
+    active: profiles.active,
+    profiles: profiles.profiles,
+  };
+  saveConfig(config);
 }
 
 /**
@@ -122,7 +113,8 @@ export function deleteProfile(name: string): boolean {
  */
 export function syncMcpConfig(url: string, apiKey: string): void {
   try {
-    const mcpPath = path.join(agentDir(), "mcp.json");
+    const agentDir = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), ".pi", "agent");
+    const mcpPath = path.join(agentDir, "mcp.json");
     if (!fs.existsSync(mcpPath)) return;
 
     const config = JSON.parse(fs.readFileSync(mcpPath, "utf-8"));

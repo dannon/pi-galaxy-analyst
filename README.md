@@ -74,16 +74,40 @@ Pi:  Loaded notebook: RNA-seq Drug Treatment (1/5 steps completed)
      Ready to continue?
 ```
 
-### Galaxy Credentials
+### Configuration
 
-Use `/connect` after starting gxypi — it prompts for your server URL and API key, and saves them for future sessions.
+gxypi uses a single config file at `~/.gxypi/config.json` for both Galaxy credentials and LLM provider settings:
 
-Or set environment variables:
+```json
+{
+  "llm": {
+    "provider": "anthropic",
+    "apiKey": "sk-ant-...",
+    "model": "claude-sonnet-4-5-20250929"
+  },
+  "galaxy": {
+    "active": "usegalaxy-org",
+    "profiles": {
+      "usegalaxy-org": {
+        "url": "https://usegalaxy.org",
+        "apiKey": "abc123"
+      }
+    }
+  }
+}
+```
+
+Both sections are optional. If `llm` is missing, gxypi falls back to environment variables or OAuth login. If `galaxy` is missing, use `/connect` to add a server interactively — credentials are saved to the config file automatically.
+
+You can also set environment variables directly:
 
 ```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
 export GALAXY_URL="https://usegalaxy.org"
 export GALAXY_API_KEY="your-api-key"
 ```
+
+If you have an existing setup with `~/.pi/agent/galaxy-profiles.json` or `~/.pi/agent/models.json`, gxypi migrates them into `~/.gxypi/config.json` on first run.
 
 ### Commands
 
@@ -94,6 +118,7 @@ export GALAXY_API_KEY="your-api-key"
 | `/plan-decisions` | View the decision log |
 | `/notebook` | Notebook info or list available notebooks |
 | `/connect` | Connect to a Galaxy server (prompts for credentials) |
+| `/profiles` | List saved Galaxy server profiles |
 
 ## How It Works
 
@@ -111,34 +136,42 @@ gxypi guides analyses through five phases:
 
 Everything is saved to a **notebook file** — a readable markdown document with YAML blocks for structured data. You can open it in any editor, share it with collaborators, or use it to reproduce the analysis later.
 
+### Git-tracked notebooks
+
+When gxypi creates a notebook, it initializes a git repository in the working directory (if one doesn't already exist) and commits every meaningful change as it happens. Step completions, QC checkpoints, decisions, phase transitions — each gets its own commit with a descriptive message like `Add step: Read Mapping` or `QC: Post-alignment QC (passed)`.
+
+This gives you a few things for free:
+
+- **Full undo history.** If an analysis step goes sideways, `git log` shows exactly what changed and when. You can diff any two points in the analysis or revert a bad step.
+- **Reproducibility evidence.** The commit history is a timestamped, immutable record of every decision and result. Reviewers and collaborators can see not just the final notebook but the entire sequence of how you got there.
+- **Branch-based exploration.** Want to try an alternative DE threshold or a different aligner? Branch, run the variant, and compare notebooks side by side with `git diff`.
+- **Collaboration.** Push the repo to GitHub and collaborators can pull, review the analysis history, and continue where you left off.
+
+The `.gitignore` auto-created with the repo excludes large bioinformatics files (FASTQ, BAM, VCF, etc.) so only the notebook markdown and any small analysis artifacts get tracked.
+
+Granular changes like Galaxy dataset references and literature additions are bundled into the next structural commit rather than creating their own, keeping the history clean.
+
 ## Using Local LLMs
 
-Pi supports any OpenAI-compatible API. To use a local provider like [LiteLLM](https://litellm.ai/), create `~/.pi/agent/models.json`:
+Pi supports any OpenAI-compatible API. To use a local provider like [LiteLLM](https://litellm.ai/), set it in `~/.gxypi/config.json`:
 
 ```json
 {
-  "providers": {
-    "litellm": {
-      "baseUrl": "http://localhost:4000/v1",
-      "api": "openai-completions",
-      "apiKey": "your-key",
-      "models": [
-        {
-          "id": "your-model-name",
-          "contextWindow": 128000,
-          "maxTokens": 16384
-        }
-      ]
-    }
+  "llm": {
+    "provider": "litellm",
+    "apiKey": "your-key",
+    "model": "your-model-name"
   }
 }
 ```
 
-Then start with `gxypi --provider litellm --model your-model-name`, or set defaults in `~/.pi/agent/settings.json`.
+You'll also need a `~/.pi/agent/models.json` to tell Pi the model's capabilities (context window, token limits, etc.) — see the Pi documentation for the format. The config file handles provider selection and API keys; `models.json` handles the model metadata that Pi needs for request sizing.
+
+Alternatively, pass flags directly: `gxypi --provider litellm --model your-model-name`.
 
 ## Tool Reference
 
-gxypi registers 26 tools across the analysis lifecycle:
+gxypi registers tools across the analysis lifecycle:
 
 | Category | Tools |
 |----------|-------|
@@ -148,6 +181,7 @@ gxypi registers 26 tools across the analysis lifecycle:
 | **Analysis** | `analysis_plan_create`, `analysis_plan_add_step`, `analysis_plan_update_step`, `analysis_plan_get`, `analysis_plan_activate`, `analysis_plan_summary`, `analysis_step_log`, `analysis_checkpoint` |
 | **Notebooks** | `analysis_notebook_create`, `analysis_notebook_open`, `analysis_notebook_list` |
 | **Publication** | `publication_init`, `publication_generate_methods`, `publication_add_figure`, `publication_update_figure`, `publication_recommend_figures`, `publication_get_status` |
+| **GTN tutorials** | `gtn_search`, `gtn_fetch` |
 
 ## Related Projects
 

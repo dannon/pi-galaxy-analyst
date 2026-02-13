@@ -45,6 +45,7 @@ import {
   fileExists,
 } from "./notebook-writer";
 import { parseNotebook, notebookToPlan } from "./notebook-parser";
+import { commitNotebook, buildCommitMessage, COMMIT_CHANGE_TYPES } from "./git";
 
 // Generate simple UUIDs (avoiding external dependency for now)
 function generateId(): string {
@@ -771,6 +772,7 @@ export async function createNotebook(
 
   const content = generateNotebook(targetPlan);
   await writeNotebook(filePath, content);
+  commitNotebook(filePath, "Create analysis notebook");
 
   state.notebookPath = filePath;
   state.notebookLoaded = true;
@@ -930,6 +932,10 @@ export async function syncToNotebook(
     }
 
     await writeNotebook(state.notebookPath, content);
+
+    if (COMMIT_CHANGE_TYPES.has(changeType)) {
+      commitNotebook(state.notebookPath, buildCommitMessage(changeType, data));
+    }
   } catch (error) {
     console.error("Failed to sync to notebook:", error);
   }

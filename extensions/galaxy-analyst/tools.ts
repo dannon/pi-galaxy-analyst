@@ -53,6 +53,7 @@ import type {
   FigureType,
 } from "./types";
 import * as path from "path";
+import { ensureGitRepo } from "./git";
 
 export function registerPlanTools(pi: ExtensionAPI): void {
 
@@ -96,6 +97,7 @@ all steps, decisions, and results throughout the analysis.`,
       let notebookPath: string | null = null;
       try {
         const cwd = process.cwd();
+        ensureGitRepo(cwd);
         const defaultPath = getDefaultPath(plan.title, cwd);
         await createNotebook(defaultPath, plan);
         notebookPath = defaultPath;
@@ -674,6 +676,7 @@ Must have an active plan to create a notebook.`,
           ? notebookPath
           : path.join(cwd, notebookPath);
 
+        ensureGitRepo(path.dirname(absolutePath));
         await createNotebook(absolutePath, plan);
 
         // Log the notebook creation event
@@ -742,6 +745,8 @@ allowing you to resume a previous analysis session.`,
             details: { error: true },
           };
         }
+
+        ensureGitRepo(path.dirname(notebookPath));
 
         const completed = plan.steps.filter(s => s.status === 'completed').length;
         const inProgress = plan.steps.find(s => s.status === 'in_progress');
