@@ -128,7 +128,7 @@ gxypi guides analyses through five phases:
 
 **2. Data Acquisition** — Track data sources (GEO, SRA, local files), register samples, generate samplesheets, link to Galaxy datasets.
 
-**3. Analysis** — Create a step-by-step plan, execute tools/workflows via Galaxy, log every decision, create QC checkpoints that require your approval before proceeding.
+**3. Analysis** — Create a step-by-step plan, execute tools/workflows via Galaxy, log every decision, record QC checkpoints with pass/fail criteria.
 
 **4. Interpretation** — Review results in biological context, pathway analysis.
 
