@@ -22,6 +22,7 @@ export const COMMIT_CHANGE_TYPES = new Set([
   "phase_change",
   "data_provenance",
   "publication_update",
+  "brc_context_updated",
 ]);
 
 const GITIGNORE_CONTENT = `# Large bioinformatics data

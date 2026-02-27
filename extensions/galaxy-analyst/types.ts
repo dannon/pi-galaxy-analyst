@@ -209,6 +209,28 @@ export type FindingCategory =
   | 'other';
 
 /**
+ * BRC catalog context — organism, assembly, and workflow selections
+ * from the BRC Analytics MCP server
+ */
+export interface BRCContext {
+  organism?: {
+    species: string;
+    taxonomyId: string;
+    commonName?: string;
+  };
+  assembly?: {
+    accession: string;
+    species: string;
+    isReference: boolean;
+    hasGeneAnnotation: boolean;
+    geneModelUrl?: string;
+  };
+  analysisCategory?: string;
+  workflowIwcId?: string;
+  workflowName?: string;
+}
+
+/**
  * Workflow structure metadata fetched from Galaxy API
  */
 export interface WorkflowStructure {
@@ -248,6 +270,9 @@ export interface AnalysisPlan {
 
   // Data provenance (Phase 2 - Data Acquisition)
   dataProvenance?: DataProvenance;
+
+  // BRC catalog context (organism, assembly, workflow selections)
+  brcContext?: BRCContext;
 
   // Galaxy connection context
   galaxy: {

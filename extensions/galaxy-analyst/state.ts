@@ -12,6 +12,7 @@ import type {
   AnalysisPlan,
   AnalysisStep,
   AnalystState,
+  BRCContext,
   DecisionEntry,
   DecisionType,
   QCCheckpoint,
@@ -285,6 +286,61 @@ export function getWorkflowSteps(): AnalysisStep[] {
     s.status === 'in_progress' &&
     s.result?.invocationId
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BRC Catalog Context State Functions
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Set the BRC organism on the active plan
+ */
+export function setBRCOrganism(organism: BRCContext['organism']): void {
+  if (!state.currentPlan) {
+    throw new Error("No active plan");
+  }
+  if (!state.currentPlan.brcContext) {
+    state.currentPlan.brcContext = {};
+  }
+  state.currentPlan.brcContext.organism = organism;
+  state.currentPlan.updated = new Date().toISOString();
+}
+
+/**
+ * Set the BRC assembly on the active plan
+ */
+export function setBRCAssembly(assembly: BRCContext['assembly']): void {
+  if (!state.currentPlan) {
+    throw new Error("No active plan");
+  }
+  if (!state.currentPlan.brcContext) {
+    state.currentPlan.brcContext = {};
+  }
+  state.currentPlan.brcContext.assembly = assembly;
+  state.currentPlan.updated = new Date().toISOString();
+}
+
+/**
+ * Set the BRC workflow selection on the active plan
+ */
+export function setBRCWorkflow(params: { category: string; iwcId: string; name: string }): void {
+  if (!state.currentPlan) {
+    throw new Error("No active plan");
+  }
+  if (!state.currentPlan.brcContext) {
+    state.currentPlan.brcContext = {};
+  }
+  state.currentPlan.brcContext.analysisCategory = params.category;
+  state.currentPlan.brcContext.workflowIwcId = params.iwcId;
+  state.currentPlan.brcContext.workflowName = params.name;
+  state.currentPlan.updated = new Date().toISOString();
+}
+
+/**
+ * Get the current BRC context from the active plan
+ */
+export function getBRCContext(): BRCContext | null {
+  return state.currentPlan?.brcContext || null;
 }
 
 /**
@@ -962,7 +1018,8 @@ export async function syncToNotebook(
     | 'data_provenance'
     | 'publication_update'
     | 'interpretation_finding'
-    | 'interpretation_summary',
+    | 'interpretation_summary'
+    | 'brc_context_updated',
   data: Record<string, unknown>
 ): Promise<void> {
   if (!state.notebookPath) {
@@ -1109,6 +1166,12 @@ export async function syncToNotebook(
             summary: data.summary,
           },
         });
+        break;
+
+      case 'brc_context_updated':
+        if (state.currentPlan) {
+          content = generateNotebook(state.currentPlan);
+        }
         break;
     }
 
