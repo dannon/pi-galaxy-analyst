@@ -10,6 +10,7 @@ import * as path from "path";
 import type {
   AnalysisPlan,
   AnalysisStep,
+  BRCContext,
   DecisionEntry,
   QCCheckpoint,
   DatasetReference,
@@ -121,6 +122,12 @@ export function generateNotebook(plan: AnalysisPlan): string {
       lines.push(`  *Relevance*: ${ref.relevance}`);
       lines.push("");
     }
+  }
+
+  // BRC Catalog Context
+  if (plan.brcContext) {
+    lines.push(renderBRCContextSection(plan.brcContext));
+    lines.push("");
   }
 
   lines.push("---");
@@ -442,6 +449,35 @@ export function generateNotebook(plan: AnalysisPlan): string {
       }
       lines.push("");
     }
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Render BRC Catalog Context section
+ */
+export function renderBRCContextSection(brc: BRCContext): string {
+  const lines: string[] = [];
+  lines.push("### BRC Catalog Context");
+  lines.push("");
+
+  if (brc.organism) {
+    const common = brc.organism.commonName ? `, ${brc.organism.commonName}` : '';
+    lines.push(`- **Organism**: ${brc.organism.species} (taxonomy: ${brc.organism.taxonomyId}${common})`);
+  }
+  if (brc.assembly) {
+    const flags: string[] = [];
+    if (brc.assembly.isReference) flags.push("reference");
+    if (brc.assembly.hasGeneAnnotation) flags.push("has gene annotation");
+    const flagStr = flags.length > 0 ? ` (${flags.join(", ")})` : '';
+    lines.push(`- **Assembly**: ${brc.assembly.accession}${flagStr}`);
+  }
+  if (brc.analysisCategory) {
+    lines.push(`- **Analysis category**: ${brc.analysisCategory}`);
+  }
+  if (brc.workflowName && brc.workflowIwcId) {
+    lines.push(`- **Workflow**: ${brc.workflowName} (${brc.workflowIwcId})`);
   }
 
   return lines.join("\n");

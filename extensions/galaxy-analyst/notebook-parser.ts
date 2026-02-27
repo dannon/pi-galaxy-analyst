@@ -8,6 +8,7 @@
 import type {
   AnalysisPlan,
   AnalysisStep,
+  BRCContext,
   DecisionEntry,
   QCCheckpoint,
   PlanStatus,
@@ -39,6 +40,7 @@ export interface ParsedNotebook {
     expectedOutcomes: string[];
     constraints: string[];
   };
+  brcContext?: BRCContext;
   steps: ParsedStep[];
   events: ParsedEvent[];
   galaxyReferences: GalaxyReference[];
@@ -472,6 +474,61 @@ export function parseInterpretation(content: string): InterpretationFindings | u
 }
 
 /**
+ * Parse the BRC Catalog Context section
+ */
+export function parseBRCContext(content: string): BRCContext | undefined {
+  // Look for ### BRC Catalog Context heading within the Research Context section or standalone
+  const sectionMatch = content.match(/### BRC Catalog Context\n\n([\s\S]*?)(?=\n###|\n---|\n## |$)/);
+  if (!sectionMatch) return undefined;
+
+  const section = sectionMatch[1];
+  const brc: BRCContext = {};
+
+  // Parse organism: **Organism**: Species (taxonomy: ID, CommonName)
+  const orgMatch = section.match(/\*\*Organism\*\*:\s*([^(]+)\(taxonomy:\s*(\d+)(?:,\s*([^)]+))?\)/);
+  if (orgMatch) {
+    brc.organism = {
+      species: orgMatch[1].trim(),
+      taxonomyId: orgMatch[2].trim(),
+    };
+    if (orgMatch[3]) {
+      brc.organism.commonName = orgMatch[3].trim();
+    }
+  }
+
+  // Parse assembly: **Assembly**: GCF_xxx (flags)
+  const asmMatch = section.match(/\*\*Assembly\*\*:\s*(\S+)(?:\s*\(([^)]+)\))?/);
+  if (asmMatch) {
+    const flags = asmMatch[2] || '';
+    brc.assembly = {
+      accession: asmMatch[1],
+      species: brc.organism?.species || '',
+      isReference: flags.includes('reference'),
+      hasGeneAnnotation: flags.includes('has gene annotation'),
+    };
+  }
+
+  // Parse category: **Analysis category**: VALUE
+  const catMatch = section.match(/\*\*Analysis category\*\*:\s*(.+)/);
+  if (catMatch) {
+    brc.analysisCategory = catMatch[1].trim();
+  }
+
+  // Parse workflow: **Workflow**: Name (iwcId)
+  const wfMatch = section.match(/\*\*Workflow\*\*:\s*(.+)\s+\(([^)]+)\)/);
+  if (wfMatch) {
+    brc.workflowName = wfMatch[1].trim();
+    brc.workflowIwcId = wfMatch[2].trim();
+  }
+
+  // Only return if we found at least one field
+  if (brc.organism || brc.assembly || brc.analysisCategory || brc.workflowIwcId) {
+    return brc;
+  }
+  return undefined;
+}
+
+/**
  * Parse an entire notebook into structured data
  */
 export function parseNotebook(content: string): ParsedNotebook | null {
@@ -481,6 +538,7 @@ export function parseNotebook(content: string): ParsedNotebook | null {
   return {
     frontmatter,
     researchContext: parseResearchContext(content),
+    brcContext: parseBRCContext(content),
     steps: parseStepBlocks(content),
     events: parseEventBlocks(content),
     galaxyReferences: parseGalaxyReferences(content),
@@ -596,6 +654,10 @@ export function notebookToPlan(notebook: ParsedNotebook): AnalysisPlan {
     decisions,
     checkpoints,
   };
+
+  if (notebook.brcContext) {
+    plan.brcContext = notebook.brcContext;
+  }
 
   if (notebook.interpretation) {
     plan.interpretation = notebook.interpretation;

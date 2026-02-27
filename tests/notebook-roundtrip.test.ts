@@ -17,6 +17,9 @@ import {
   initPublication,
   addFigure,
   addWorkflowStep,
+  setBRCOrganism,
+  setBRCAssembly,
+  setBRCWorkflow,
 } from "../extensions/galaxy-analyst/state";
 import { generateNotebook } from "../extensions/galaxy-analyst/notebook-writer";
 import { parseNotebook, notebookToPlan, parseFrontmatter } from "../extensions/galaxy-analyst/notebook-parser";
@@ -430,6 +433,61 @@ describe("notebook with lifecycle phases", () => {
     expect(markdown).toContain("Publication");
     expect(markdown).toContain("Nature Methods");
     expect(markdown).toContain("Volcano Plot");
+  });
+
+  it("round-trips plan with BRC context", () => {
+    const plan = createPlan({
+      title: "BRC Context Test",
+      researchQuestion: "Yeast RNA-seq analysis",
+      dataDescription: "Paired-end RNA-seq",
+      expectedOutcomes: ["DEGs"],
+      constraints: [],
+    });
+
+    setBRCOrganism({ species: "Saccharomyces cerevisiae", taxonomyId: "559292", commonName: "Baker's yeast" });
+    setBRCAssembly({
+      accession: "GCF_000146045.2",
+      species: "Saccharomyces cerevisiae",
+      isReference: true,
+      hasGeneAnnotation: true,
+    });
+    setBRCWorkflow({
+      category: "TRANSCRIPTOMICS",
+      iwcId: "rnaseq-pe-main",
+      name: "RNA-Seq Analysis: Paired-End Read Processing",
+    });
+
+    const markdown = generateNotebook(plan);
+
+    // Check rendered content
+    expect(markdown).toContain("### BRC Catalog Context");
+    expect(markdown).toContain("Saccharomyces cerevisiae");
+    expect(markdown).toContain("559292");
+    expect(markdown).toContain("GCF_000146045.2");
+    expect(markdown).toContain("reference");
+    expect(markdown).toContain("TRANSCRIPTOMICS");
+    expect(markdown).toContain("rnaseq-pe-main");
+
+    // Round-trip through parse
+    const parsed = parseNotebook(markdown);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.brcContext).toBeTruthy();
+    expect(parsed!.brcContext!.organism!.species).toBe("Saccharomyces cerevisiae");
+    expect(parsed!.brcContext!.organism!.taxonomyId).toBe("559292");
+    expect(parsed!.brcContext!.organism!.commonName).toBe("Baker's yeast");
+    expect(parsed!.brcContext!.assembly!.accession).toBe("GCF_000146045.2");
+    expect(parsed!.brcContext!.assembly!.isReference).toBe(true);
+    expect(parsed!.brcContext!.assembly!.hasGeneAnnotation).toBe(true);
+    expect(parsed!.brcContext!.analysisCategory).toBe("TRANSCRIPTOMICS");
+    expect(parsed!.brcContext!.workflowIwcId).toBe("rnaseq-pe-main");
+    expect(parsed!.brcContext!.workflowName).toBe("RNA-Seq Analysis: Paired-End Read Processing");
+
+    // Full plan restore
+    const restored = notebookToPlan(parsed!);
+    expect(restored.brcContext).toBeTruthy();
+    expect(restored.brcContext!.organism!.species).toBe("Saccharomyces cerevisiae");
+    expect(restored.brcContext!.assembly!.accession).toBe("GCF_000146045.2");
+    expect(restored.brcContext!.workflowIwcId).toBe("rnaseq-pe-main");
   });
 
   it("round-trips workflow step with workflowStructure", () => {
