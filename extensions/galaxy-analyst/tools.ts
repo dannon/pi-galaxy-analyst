@@ -48,6 +48,11 @@ import {
   addWorkflowStep,
   linkInvocation,
   getWorkflowSteps,
+  // BRC catalog context
+  setBRCOrganism,
+  setBRCAssembly,
+  setBRCWorkflow,
+  getBRCContext,
 } from "./state";
 import type {
   StepStatus,
@@ -2308,6 +2313,97 @@ in-progress workflow steps, or specify a stepId to check one.`,
       const d = result.details as { checked?: number; error?: boolean } | undefined;
       if (d?.error) return new Text("❌ Invocation check failed");
       return new Text(`🔍 Checked ${d?.checked || 0} workflow invocation(s)`);
+    },
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // BRC CATALOG CONTEXT
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tool: Record BRC catalog selections on the plan
+  // ─────────────────────────────────────────────────────────────────────────────
+  pi.registerTool({
+    name: "brc_set_context",
+    label: "Set BRC Context",
+    description: `Record organism, assembly, and/or workflow selections from the BRC Analytics catalog
+on the active analysis plan. Call this after using BRC MCP tools (search_organisms,
+get_assemblies, get_compatible_workflows, etc.) to persist the researcher's choices.
+All fields are optional — call incrementally as selections are made.`,
+    parameters: Type.Object({
+      organism: Type.Optional(Type.Object({
+        species: Type.String({ description: "Species name (e.g., 'Saccharomyces cerevisiae')" }),
+        taxonomyId: Type.String({ description: "NCBI taxonomy ID" }),
+        commonName: Type.Optional(Type.String({ description: "Common name (e.g., 'Baker\\'s yeast')" })),
+      }, { description: "Organism selection from BRC catalog" })),
+      assembly: Type.Optional(Type.Object({
+        accession: Type.String({ description: "Assembly accession (e.g., 'GCF_000146045.2')" }),
+        species: Type.String({ description: "Species this assembly belongs to" }),
+        isReference: Type.Boolean({ description: "Whether this is the reference assembly" }),
+        hasGeneAnnotation: Type.Boolean({ description: "Whether gene annotation is available" }),
+        geneModelUrl: Type.Optional(Type.String({ description: "URL to gene model file" })),
+      }, { description: "Assembly selection from BRC catalog" })),
+      workflow: Type.Optional(Type.Object({
+        category: Type.String({ description: "Analysis category (e.g., 'TRANSCRIPTOMICS')" }),
+        iwcId: Type.String({ description: "IWC workflow identifier" }),
+        name: Type.String({ description: "Human-readable workflow name" }),
+      }, { description: "Workflow selection from BRC catalog" })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      try {
+        const plan = getCurrentPlan();
+        if (!plan) {
+          return {
+            content: [{ type: "text", text: JSON.stringify({ success: false, error: "No active plan. Create one first with analysis_plan_create." }) }],
+            details: { error: true } as Record<string, unknown>,
+          };
+        }
+
+        if (!params.organism && !params.assembly && !params.workflow) {
+          return {
+            content: [{ type: "text", text: JSON.stringify({ success: false, error: "At least one of organism, assembly, or workflow must be provided." }) }],
+            details: { error: true } as Record<string, unknown>,
+          };
+        }
+
+        if (params.organism) {
+          setBRCOrganism(params.organism);
+        }
+        if (params.assembly) {
+          setBRCAssembly(params.assembly);
+        }
+        if (params.workflow) {
+          setBRCWorkflow(params.workflow);
+        }
+
+        await syncToNotebook('brc_context_updated', {
+          organism: params.organism?.species,
+          assembly: params.assembly?.accession,
+          workflow: params.workflow?.name,
+        });
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              message: "BRC context updated on plan",
+              brcContext: getBRCContext(),
+            }, null, 2),
+          }],
+          details: { updated: true } as Record<string, unknown>,
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error: ${(error as Error).message}` }],
+          details: { error: true } as Record<string, unknown>,
+        };
+      }
+    },
+    renderResult: (result) => {
+      const d = result.details as { error?: boolean; updated?: boolean } | undefined;
+      if (d?.error) return new Text("❌ BRC context update failed");
+      return new Text("🧬 BRC context updated on plan");
     },
   });
 

@@ -117,6 +117,9 @@ const EXPECTED_TOOLS = [
   "workflow_invocation_link",
   "workflow_invocation_check",
 
+  // BRC Catalog Context
+  "brc_set_context",
+
   // GTN Tutorial Discovery
   "gtn_search",
   "gtn_fetch",
