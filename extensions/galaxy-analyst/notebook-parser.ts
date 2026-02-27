@@ -25,6 +25,7 @@ import type {
   InterpretationFindings,
   BiologicalFinding,
   FindingCategory,
+  WorkflowStructure,
 } from "./types";
 
 /**
@@ -75,6 +76,12 @@ export interface ParsedStep {
   job_id?: string;
   job_url?: string;
   invocation_id?: string;
+  workflow_structure?: {
+    step_count: number;
+    tools?: string[];
+    inputs?: string[];
+    outputs?: string[];
+  };
 }
 
 export interface ParsedEvent {
@@ -285,6 +292,18 @@ export function parseStepBlocks(content: string): ParsedStep[] {
       // The step data might be nested or flat depending on format
       const stepData = (parsed.step as Record<string, unknown>) || parsed;
 
+      // Parse workflow_structure if present
+      let workflowStructure: ParsedStep['workflow_structure'] | undefined;
+      if (stepData.workflow_structure) {
+        const ws = stepData.workflow_structure as Record<string, unknown>;
+        workflowStructure = {
+          step_count: Number(ws.step_count) || 0,
+          tools: ws.tools as string[] | undefined,
+          inputs: ws.inputs as string[] | undefined,
+          outputs: ws.outputs as string[] | undefined,
+        };
+      }
+
       steps.push({
         id: String(stepData.id || ""),
         name: String(stepData.name || ""),
@@ -301,6 +320,7 @@ export function parseStepBlocks(content: string): ParsedStep[] {
         job_id: stepData.job_id as string | undefined,
         job_url: stepData.job_url as string | undefined,
         invocation_id: stepData.invocation_id as string | undefined,
+        workflow_structure: workflowStructure,
       });
     }
   }
@@ -475,39 +495,57 @@ export function notebookToPlan(notebook: ParsedNotebook): AnalysisPlan {
   const { frontmatter, researchContext, steps, events } = notebook;
 
   // Convert parsed steps to AnalysisStep format
-  const analysisSteps: AnalysisStep[] = steps.map((step) => ({
-    id: step.id,
-    name: step.name,
-    description: step.description,
-    status: step.status,
-    execution: {
-      type: step.execution.type,
-      toolId: step.execution.tool_id,
-      workflowId: step.execution.workflow_id,
-      trsId: step.execution.trs_id,
-    },
-    inputs: step.inputs.map((i) => ({
-      name: i.name,
-      description: "",
-      datasetId: i.dataset_ids?.[0],
-    })),
-    expectedOutputs: [],
-    actualOutputs: step.outputs.map((o) => ({
-      datasetId: o.dataset_id,
-      name: o.name,
-      datatype: "",
-    })),
-    result: step.job_id
-      ? {
-          completedAt: "",
-          jobId: step.job_id,
-          invocationId: step.invocation_id,
-          summary: "",
-          qcPassed: null,
-        }
-      : undefined,
-    dependsOn: [],
-  }));
+  const analysisSteps: AnalysisStep[] = steps.map((step) => {
+    // Reconstruct WorkflowStructure from parsed data
+    let workflowStructure: WorkflowStructure | undefined;
+    if (step.workflow_structure) {
+      const ws = step.workflow_structure;
+      workflowStructure = {
+        name: step.name,
+        version: 0,
+        toolIds: [],
+        toolNames: ws.tools || [],
+        inputLabels: ws.inputs || [],
+        outputLabels: ws.outputs || [],
+        stepCount: ws.step_count,
+      };
+    }
+
+    return {
+      id: step.id,
+      name: step.name,
+      description: step.description,
+      status: step.status,
+      execution: {
+        type: step.execution.type,
+        toolId: step.execution.tool_id,
+        workflowId: step.execution.workflow_id,
+        trsId: step.execution.trs_id,
+      },
+      inputs: step.inputs.map((i) => ({
+        name: i.name,
+        description: "",
+        datasetId: i.dataset_ids?.[0],
+      })),
+      expectedOutputs: [],
+      actualOutputs: step.outputs.map((o) => ({
+        datasetId: o.dataset_id,
+        name: o.name,
+        datatype: "",
+      })),
+      result: step.job_id
+        ? {
+            completedAt: "",
+            jobId: step.job_id,
+            invocationId: step.invocation_id,
+            summary: "",
+            qcPassed: null,
+          }
+        : undefined,
+      workflowStructure,
+      dependsOn: [],
+    };
+  });
 
   // Convert events to decisions and checkpoints
   const decisions: DecisionEntry[] = [];

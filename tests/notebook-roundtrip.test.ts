@@ -16,6 +16,7 @@ import {
   setInterpretationSummary,
   initPublication,
   addFigure,
+  addWorkflowStep,
 } from "../extensions/galaxy-analyst/state";
 import { generateNotebook } from "../extensions/galaxy-analyst/notebook-writer";
 import { parseNotebook, notebookToPlan, parseFrontmatter } from "../extensions/galaxy-analyst/notebook-parser";
@@ -429,5 +430,67 @@ describe("notebook with lifecycle phases", () => {
     expect(markdown).toContain("Publication");
     expect(markdown).toContain("Nature Methods");
     expect(markdown).toContain("Volcano Plot");
+  });
+
+  it("round-trips workflow step with workflowStructure", () => {
+    const plan = createPlan({
+      title: "Workflow RT Test",
+      researchQuestion: "Q",
+      dataDescription: "D",
+      expectedOutcomes: [],
+      constraints: [],
+    });
+
+    addWorkflowStep({
+      workflowId: "wf-abc",
+      trsId: "iwc-rnaseq",
+      workflowStructure: {
+        name: "RNA-seq PE",
+        annotation: "Paired-end pipeline",
+        version: 3,
+        toolIds: [
+          "toolshed.g2.bx.psu.edu/repos/devteam/fastqc/fastqc/0.74",
+          "toolshed.g2.bx.psu.edu/repos/iuc/hisat2/hisat2/2.2.1",
+          "toolshed.g2.bx.psu.edu/repos/iuc/featurecounts/featurecounts/2.0.3",
+        ],
+        toolNames: ["fastqc", "hisat2", "featurecounts"],
+        inputLabels: ["PE reads", "Reference annotation"],
+        outputLabels: ["Aligned BAM", "Count matrix"],
+        stepCount: 5,
+      },
+    });
+
+    const markdown = generateNotebook(plan);
+
+    // Check the YAML block contains workflow_structure
+    expect(markdown).toContain("workflow_structure:");
+    expect(markdown).toContain("step_count: 5");
+    expect(markdown).toContain('"fastqc"');
+    expect(markdown).toContain('"PE reads"');
+    expect(markdown).toContain('"Count matrix"');
+
+    // Check the human-readable pipeline line
+    expect(markdown).toContain("**Workflow pipeline**: fastqc -> hisat2 -> featurecounts");
+
+    // Round-trip through parse/convert
+    const parsed = parseNotebook(markdown);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.steps).toHaveLength(1);
+    expect(parsed!.steps[0].execution.type).toBe("workflow");
+    expect(parsed!.steps[0].execution.workflow_id).toBe("wf-abc");
+    expect(parsed!.steps[0].execution.trs_id).toBe("iwc-rnaseq");
+    expect(parsed!.steps[0].workflow_structure).toBeTruthy();
+    expect(parsed!.steps[0].workflow_structure!.step_count).toBe(5);
+    expect(parsed!.steps[0].workflow_structure!.tools).toEqual(["fastqc", "hisat2", "featurecounts"]);
+    expect(parsed!.steps[0].workflow_structure!.inputs).toEqual(["PE reads", "Reference annotation"]);
+    expect(parsed!.steps[0].workflow_structure!.outputs).toEqual(["Aligned BAM", "Count matrix"]);
+
+    // Full plan restore
+    const restored = notebookToPlan(parsed!);
+    expect(restored.steps[0].workflowStructure).toBeTruthy();
+    expect(restored.steps[0].workflowStructure!.toolNames).toEqual(["fastqc", "hisat2", "featurecounts"]);
+    expect(restored.steps[0].workflowStructure!.inputLabels).toEqual(["PE reads", "Reference annotation"]);
+    expect(restored.steps[0].workflowStructure!.outputLabels).toEqual(["Aligned BAM", "Count matrix"]);
+    expect(restored.steps[0].workflowStructure!.stepCount).toBe(5);
   });
 });

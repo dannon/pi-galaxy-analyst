@@ -20,6 +20,7 @@ import type {
   PublicationMaterials,
   InterpretationFindings,
   BiologicalFinding,
+  WorkflowStructure,
 } from "./types";
 
 /**
@@ -195,6 +196,10 @@ export function generateNotebook(plan: AnalysisPlan): string {
       lines.push(`    trs_id: "${step.execution.trsId}"`);
     }
 
+    if (step.workflowStructure) {
+      renderWorkflowStructureYaml(lines, step.workflowStructure);
+    }
+
     if (step.inputs.length > 0) {
       lines.push("  inputs:");
       for (const input of step.inputs) {
@@ -223,6 +228,10 @@ export function generateNotebook(plan: AnalysisPlan): string {
     lines.push("```");
     lines.push("");
     lines.push(`**Purpose**: ${step.description}`);
+    if (step.workflowStructure) {
+      lines.push("");
+      lines.push(`**Workflow pipeline**: ${step.workflowStructure.toolNames.join(' -> ')}`);
+    }
     lines.push("");
   }
 
@@ -436,6 +445,32 @@ export function generateNotebook(plan: AnalysisPlan): string {
   }
 
   return lines.join("\n");
+}
+
+/**
+ * Render workflow_structure block inside a step YAML block
+ */
+function renderWorkflowStructureYaml(lines: string[], ws: WorkflowStructure): void {
+  lines.push("  workflow_structure:");
+  lines.push(`    step_count: ${ws.stepCount}`);
+  if (ws.toolNames.length > 0) {
+    lines.push("    tools:");
+    for (const name of ws.toolNames) {
+      lines.push(`      - "${name}"`);
+    }
+  }
+  if (ws.inputLabels.length > 0) {
+    lines.push("    inputs:");
+    for (const label of ws.inputLabels) {
+      lines.push(`      - "${label}"`);
+    }
+  }
+  if (ws.outputLabels.length > 0) {
+    lines.push("    outputs:");
+    for (const label of ws.outputLabels) {
+      lines.push(`      - "${label}"`);
+    }
+  }
 }
 
 /**
@@ -688,6 +723,10 @@ export function addStepSection(content: string, step: AnalysisStep): string {
     lines.push(`    trs_id: "${step.execution.trsId}"`);
   }
 
+  if (step.workflowStructure) {
+    renderWorkflowStructureYaml(lines, step.workflowStructure);
+  }
+
   if (step.inputs.length > 0) {
     lines.push("  inputs:");
     for (const input of step.inputs) {
@@ -698,6 +737,10 @@ export function addStepSection(content: string, step: AnalysisStep): string {
   lines.push("```");
   lines.push("");
   lines.push(`**Purpose**: ${step.description}`);
+  if (step.workflowStructure) {
+    lines.push("");
+    lines.push(`**Workflow pipeline**: ${step.workflowStructure.toolNames.join(' -> ')}`);
+  }
   lines.push("");
 
   const stepSection = lines.join("\n");
