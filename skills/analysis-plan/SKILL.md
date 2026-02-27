@@ -88,6 +88,11 @@ Use this skill when:
 | `workflow_invocation_link` | Link a Galaxy invocation to a workflow step |
 | `workflow_invocation_check` | Poll invocation status and auto-complete/fail steps |
 
+### BRC Catalog Context
+| Tool | Purpose |
+|------|---------|
+| `brc_set_context` | Record organism/assembly/workflow selections on plan |
+
 ---
 
 ## Session Start: Check for Existing Analysis
@@ -501,6 +506,42 @@ workflow_invocation_check(stepId: "1")
 ```
 
 This queries the Galaxy API for job states. Steps are auto-completed when all jobs succeed, or auto-failed when any job errors. Omit `stepId` to check all active workflow steps at once.
+
+---
+
+## BRC Catalog-Guided Analysis
+
+When a BRC Analytics MCP server is connected, use the catalog to discover organisms, assemblies, and compatible workflows. This is especially useful when the researcher names an organism that may be in the BRC catalog.
+
+### End-to-End Flow
+
+1. **Find organism**: Researcher names an organism → call MCP `search_organisms`
+2. **Get assemblies**: Call MCP `get_assemblies` with the taxonomy ID → show options, researcher picks one
+3. **Find workflows**: Call MCP `get_compatible_workflows` with the organism's ploidy → show compatible workflows
+4. **Check compatibility**: Call MCP `check_compatibility` to verify the assembly+workflow match
+5. **Record selections**: Call `brc_set_context` to record organism + assembly + workflow on the plan
+6. **Resolve inputs**: Call MCP `resolve_workflow_inputs` → gets pre-filled params (FASTA URL, gene model, dbkey)
+7. **Add to plan**: Call `workflow_to_plan` (existing) to add the workflow step
+8. **Invoke workflow**: Call Galaxy MCP `invoke_workflow` with the resolved params
+9. **Track execution**: Call `workflow_invocation_link` + `workflow_invocation_check` (existing)
+
+### When to Use BRC Tools
+
+- Researcher mentions an organism by name (especially model organisms, crops, pathogens)
+- Researcher asks about available workflows for a species
+- Researcher wants to run a standard analysis pipeline for a cataloged organism
+- You need to determine compatible reference assemblies or gene annotations
+
+### Key MCP Tools (provided by BRC server, not gxypi)
+
+| Tool | Use For |
+|------|---------|
+| `search_organisms` | Find organisms by name, genus, or taxonomy ID |
+| `get_assemblies` | List available assemblies for an organism |
+| `get_compatible_workflows` | Filter workflows by ploidy and taxonomy |
+| `check_compatibility` | Verify assembly + workflow compatibility |
+| `resolve_workflow_inputs` | Map assembly to workflow params (FASTA, gene model, dbkey) |
+| `search_ena` | Find public sequencing data by taxonomy |
 
 ---
 
