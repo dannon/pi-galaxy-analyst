@@ -99,10 +99,14 @@ export class AgentManager {
 
   private setStatus(status: AgentStatus, message?: string): void {
     this.status = status;
-    this.window.webContents.send("agent:status", status, message);
+    if (!this.window.isDestroyed()) {
+      this.window.webContents.send("agent:status", status, message);
+    }
   }
 
   private handleLine(line: string): void {
+    if (this.window.isDestroyed()) return;
+
     let data: Record<string, unknown>;
     try {
       data = JSON.parse(line);
