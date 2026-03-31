@@ -1117,6 +1117,9 @@ export async function syncToNotebook(
         break;
 
       case 'data_provenance':
+        if (state.currentPlan) {
+          content = generateNotebook(state.currentPlan);
+        }
         content = appendEvent(content, {
           type: 'event',
           timestamp: new Date().toISOString(),

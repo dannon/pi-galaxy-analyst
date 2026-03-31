@@ -4,6 +4,19 @@ An AI co-scientist for [Galaxy](https://galaxyproject.org) bioinformatics, built
 
 gxypi turns Pi into a structured analysis partner — it creates plans, runs Galaxy tools, documents every decision, and saves everything to a persistent notebook you can share, resume, and reproduce.
 
+## Current Status
+
+gxypi is implemented and locally tested, but live Galaxy validation is still in progress.
+
+- TypeScript typecheck passes against `@mariozechner/pi-coding-agent` `0.55.0`
+- Local automated suite: `113` tests passing
+- Notebook persistence, plan state, workflow metadata, BRC context, and extension registration are covered by tests
+- Provenance notebook sync now has a dedicated regression check via `npm run validate:provenance`
+- Live runtime validation has confirmed extension loading, Galaxy connection/history state bridging, and notebook rewriting for `data_set_source`
+- Remaining validation work: use a stronger tool-calling model for the live MCP path, then run Galaxy end-to-end with real histories, datasets, and jobs
+
+If you are validating the runtime manually, use a `pi` CLI version that matches the SDK line used by this repo where possible.
+
 ## Install
 
 ```bash
@@ -171,7 +184,7 @@ Alternatively, pass flags directly: `gxypi --provider litellm --model your-model
 
 ## Tool Reference
 
-gxypi registers tools across the analysis lifecycle:
+gxypi currently registers `34` extension tools across the analysis lifecycle:
 
 | Category | Tools |
 |----------|-------|
@@ -180,8 +193,13 @@ gxypi registers tools across the analysis lifecycle:
 | **Data acquisition** | `data_set_source`, `data_add_sample`, `data_add_file`, `data_link_galaxy`, `data_generate_samplesheet`, `data_get_provenance` |
 | **Analysis** | `analysis_plan_create`, `analysis_plan_add_step`, `analysis_plan_update_step`, `analysis_plan_get`, `analysis_plan_activate`, `analysis_plan_summary`, `analysis_step_log`, `analysis_checkpoint` |
 | **Notebooks** | `analysis_notebook_create`, `analysis_notebook_open`, `analysis_notebook_list` |
+| **Interpretation** | `interpretation_add_finding`, `interpretation_summarize` |
 | **Publication** | `publication_init`, `publication_generate_methods`, `publication_add_figure`, `publication_update_figure`, `publication_recommend_figures`, `publication_get_status` |
+| **Workflow integration** | `workflow_to_plan`, `workflow_invocation_link`, `workflow_invocation_check` |
+| **BRC context** | `brc_set_context` |
 | **GTN tutorials** | `gtn_search`, `gtn_fetch` |
+
+For a step-by-step live validation runbook, see [docs/live-validation-checklist.md](/Users/dannon/work/pi-galaxy-analyst/docs/live-validation-checklist.md). For the provenance notebook regression specifically, run `npm run validate:provenance`.
 
 ## Related Projects
 

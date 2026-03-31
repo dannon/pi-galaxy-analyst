@@ -6,8 +6,13 @@
  * This follows the OpenClaw testing pattern of fake API objects.
  */
 import { describe, it, expect } from "vitest";
+import { afterEach, beforeEach } from "vitest";
+import { mkdtemp, readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import galaxyAnalystExtension from "../extensions/galaxy-analyst/index";
+import { resetState } from "../extensions/galaxy-analyst/state";
 
 interface RegisteredTool {
   name: string;
@@ -260,6 +265,67 @@ describe("tool definitions", () => {
     expect(schema.properties.researchQuestion).toBeTruthy();
     expect(schema.properties.dataDescription).toBeTruthy();
     expect(schema.properties.expectedOutcomes).toBeTruthy();
+  });
+});
+
+describe("provenance notebook sync", () => {
+  const originalCwd = process.cwd();
+
+  beforeEach(() => {
+    resetState();
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    resetState();
+  });
+
+  it("persists data provenance section after sample and file updates", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "gxypi-provenance-"));
+    process.chdir(tempDir);
+
+    const { api, tools } = createFakeExtensionAPI();
+    galaxyAnalystExtension(api);
+
+    await tools.get("analysis_plan_create")!.execute("1", {
+      title: "Provenance Sync Test",
+      researchQuestion: "Q",
+      dataDescription: "D",
+      expectedOutcomes: ["O"],
+      constraints: [],
+    });
+
+    await tools.get("data_set_source")!.execute("2", {
+      source: "other",
+      accession: "582600",
+      downloadDate: "2026-03-31",
+    });
+
+    await tools.get("data_add_sample")!.execute("3", {
+      id: "mutant",
+      name: "mutant",
+      condition: "mutant",
+    });
+
+    await tools.get("data_add_file")!.execute("4", {
+      id: "mutant_R1",
+      name: "mutant_R1.fastq",
+      type: "fastq",
+      format: "fastq",
+      readType: "paired",
+      pairedWith: "mutant_R2",
+    });
+
+    const notebookPath = path.join(tempDir, "provenance-sync-test-notebook.md");
+    const notebook = await readFile(notebookPath, "utf8");
+
+    expect(notebook).toContain("## Data Provenance");
+    expect(notebook).toContain("**Source**: OTHER");
+    expect(notebook).toContain("**Accession**: 582600");
+    expect(notebook).toContain("| mutant | mutant | mutant | - | 0 |");
+    expect(notebook).toContain("| mutant_R1 | mutant_R1.fastq | fastq | - |");
+    expect(notebook).toContain("sample_count: 1");
+    expect(notebook).toContain("file_count: 1");
   });
 });
 

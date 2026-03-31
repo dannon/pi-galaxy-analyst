@@ -1173,6 +1173,14 @@ with their metadata and associated files.`,
         });
 
         const plan = getCurrentPlan();
+        const provenance = plan?.dataProvenance;
+
+        await syncToNotebook('data_provenance', {
+          source: provenance?.source,
+          accession: provenance?.accession,
+          sampleCount: provenance?.samples.length || 0,
+          fileCount: provenance?.originalFiles.length || 0,
+        });
 
         return {
           content: [{
@@ -1245,6 +1253,14 @@ with their types and pairing information.`,
         });
 
         const plan = getCurrentPlan();
+        const provenance = plan?.dataProvenance;
+
+        await syncToNotebook('data_provenance', {
+          source: provenance?.source,
+          accession: provenance?.accession,
+          sampleCount: provenance?.samples.length || 0,
+          fileCount: provenance?.originalFiles.length || 0,
+        });
 
         return {
           content: [{
