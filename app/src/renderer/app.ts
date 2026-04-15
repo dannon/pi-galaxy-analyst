@@ -816,6 +816,16 @@ window.orbit.onUiRequest((request) => {
   console.log("[orbit] UI request:", request.method, (request as Record<string, unknown>).widgetKey || "");
   const method = request.method;
 
+  if (method === "notify") {
+    const message = (request as Record<string, unknown>).message as string | undefined;
+    const notifyType = (request as Record<string, unknown>).notifyType as string | undefined;
+    if (message) {
+      const prefix = notifyType === "warning" ? "⚠️ " : notifyType === "error" ? "❌ " : "";
+      chat.addInfoMessage(prefix + message.replace(/</g, "&lt;"));
+    }
+    return;
+  }
+
   if (method === "setWidget") {
     const key = request.widgetKey as string;
     const lines = request.widgetLines as string[] | undefined;
@@ -851,16 +861,11 @@ window.orbit.onUiRequest((request) => {
       } catch { /* ignore parse errors */ }
     }
 
-    // pi-galaxy-analyst text widgets
+    // Legacy alias: /plan slash command emits "plan-view" — route to Plan tab.
     if (key === "plan-view" && lines) {
-      // Same as "plan" — route to Plan tab
       artifacts.setPlanText(lines.join("\n"));
       if (!hasShownPlanOnce) { switchTab("plan"); hasShownPlanOnce = true; }
       else { markTabNew("plan"); }
-    }
-
-    if ((key === "status-view" || key === "decisions-view" || key === "notebook-view" || key === "profiles-view") && lines) {
-      chat.addInfoMessage("<pre>" + lines.join("\n").replace(/</g, "&lt;") + "</pre>");
     }
 
     // Phase 4: parameter form — replaces plan view
