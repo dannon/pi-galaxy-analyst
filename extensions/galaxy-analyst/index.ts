@@ -497,54 +497,42 @@ export default function galaxyAnalystExtension(pi: ExtensionAPI): void {
   // Register /notebook command for quick notebook access
   // ─────────────────────────────────────────────────────────────────────────────
   pi.registerCommand("notebook", {
-    description: "View current notebook info or list available notebooks",
+    description: "View current notebook content or list available notebooks",
     handler: async (_args, ctx) => {
       const notebookPath = getNotebookPath();
-      const plan = getCurrentPlan();
 
-      const lines: string[] = [];
-      lines.push("📓 Analysis Notebook");
-      lines.push("");
-
-      if (notebookPath && plan) {
-        lines.push(`Path: ${notebookPath}`);
-        lines.push(`Title: ${plan.title}`);
-        lines.push(`Status: ${plan.status}`);
-
-        const completed = plan.steps.filter(s => s.status === 'completed').length;
-        lines.push(`Progress: ${completed}/${plan.steps.length} steps`);
-
-        lines.push("");
-        lines.push("Sections:");
-        lines.push("  - Research Context");
-        lines.push("  - Analysis Plan (steps with YAML blocks)");
-        lines.push("  - Execution Log (append-only audit trail)");
-        lines.push("  - Galaxy References (dataset links)");
-      } else {
-        lines.push("No notebook loaded.");
-        lines.push("");
-
-        // List available notebooks
-        const cwd = process.cwd();
-        const notebooks = await findNotebooks(cwd);
-
-        if (notebooks.length > 0) {
-          lines.push(`Found ${notebooks.length} notebook(s) in ${cwd}:`);
-          lines.push("");
-          for (const nb of notebooks) {
-            lines.push(`  📄 ${nb.title}`);
-            lines.push(`     ${nb.path}`);
-            lines.push(`     ${nb.completedSteps}/${nb.stepCount} steps, ${nb.status}`);
-            lines.push("");
-          }
-          lines.push("Use analysis_notebook_open to load one.");
-        } else {
-          lines.push("No notebooks found in current directory.");
-          lines.push("Create a plan, then use analysis_notebook_create.");
+      // Active notebook: dump the live markdown file (plan + steps + decisions +
+      // galaxy refs), preceded by a short header. Shells route "notebook" to
+      // their Notebook tab.
+      if (notebookPath && fs.existsSync(notebookPath)) {
+        let content = "";
+        try {
+          content = fs.readFileSync(notebookPath, "utf-8");
+        } catch (err) {
+          ctx.ui.notify(`Failed to read notebook: ${err}`, "error");
+          return;
         }
+        const header = `> \`${notebookPath}\`\n\n`;
+        ctx.ui.setWidget("notebook", [header + content]);
+        return;
       }
 
-      ctx.ui.setWidget("notebook-view", lines);
+      // No active notebook: surface what's in the working dir so the user
+      // can decide whether to open one.
+      const cwd = process.cwd();
+      const notebooks = await findNotebooks(cwd);
+
+      const lines: string[] = ["# 📓 No notebook loaded", ""];
+      if (notebooks.length > 0) {
+        lines.push(`Found ${notebooks.length} notebook(s) in \`${cwd}\`:`, "");
+        for (const nb of notebooks) {
+          lines.push(`- **${nb.title}** — \`${nb.path}\` (${nb.completedSteps}/${nb.stepCount} steps, ${nb.status})`);
+        }
+        lines.push("", "Use `analysis_notebook_open` to load one.");
+      } else {
+        lines.push(`No notebooks found in \`${cwd}\`.`, "", "Create a plan, then use `analysis_notebook_create`.");
+      }
+      ctx.ui.setWidget("notebook", [lines.join("\n")]);
     },
   });
 

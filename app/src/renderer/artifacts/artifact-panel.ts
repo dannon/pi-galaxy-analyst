@@ -321,6 +321,18 @@ export class ArtifactPanel {
     this.resultsEl.innerHTML = '<div class="empty-state">Results will appear here as the analysis runs.</div>';
   }
 
+  /** Replace the Notebook tab with rendered markdown (used by /notebook). */
+  setNotebookMarkdown(markdown: string): void {
+    this.resultsEl.innerHTML = "";
+    const wrapper = document.createElement("div");
+    wrapper.className = "result-block notebook-dump";
+    const content = document.createElement("div");
+    content.className = "result-markdown";
+    content.innerHTML = marked.parse(markdown || "", { async: false }) as string;
+    wrapper.appendChild(content);
+    this.resultsEl.appendChild(wrapper);
+  }
+
   /** Reset all tabs to their initial empty state. */
   clear(): void {
     // Plan tab

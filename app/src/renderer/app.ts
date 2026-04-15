@@ -868,6 +868,13 @@ window.orbit.onUiRequest((request) => {
       else { markTabNew("plan"); }
     }
 
+    // /notebook dumps the live notebook.md content — route to Notebook tab.
+    if (key === "notebook" && lines) {
+      artifacts.setNotebookMarkdown(lines.join("\n"));
+      setArtifactCollapsed(false);
+      switchTab("results");
+    }
+
     // Phase 4: parameter form — replaces plan view
     if (key === "parameters" && lines) {
       console.log("[orbit] parameters widget received, lines[0] length:", lines[0]?.length);
