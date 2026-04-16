@@ -86,6 +86,16 @@ export function generateNotebook(plan: AnalysisPlan): string {
   // Research Context
   lines.push("## Research Context");
   lines.push("");
+
+  // Authoritative structured block for the parser (invisible extra fields).
+  // The markdown below is for humans and the existing *contains* tests.
+  if (plan.researchQuestion && hasResearchQuestionDetails(plan.researchQuestion)) {
+    lines.push("```yaml");
+    lines.push(`research_question_json: '${escapeJsonInYaml(plan.researchQuestion)}'`);
+    lines.push("```");
+    lines.push("");
+  }
+
   lines.push(`**Research Question**: ${plan.context.researchQuestion}`);
 
   // Hypothesis if refined (Phase 1)
@@ -498,6 +508,19 @@ export function renderBRCContextSection(brc: BRCContext): string {
   }
 
   return lines.join("\n");
+}
+
+/**
+ * True if a ResearchQuestion has any field worth persisting beyond
+ * context.researchQuestion (which is already rendered above).
+ */
+function hasResearchQuestionDetails(rq: ResearchQuestion): boolean {
+  return Boolean(
+    rq.hypothesis ||
+      rq.pico ||
+      (rq.literatureRefs && rq.literatureRefs.length > 0) ||
+      rq.refinedAt
+  );
 }
 
 /**

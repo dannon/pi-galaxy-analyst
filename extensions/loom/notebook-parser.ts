@@ -46,6 +46,7 @@ export interface ParsedNotebook {
   galaxyReferences: GalaxyReference[];
   interpretation?: InterpretationFindings;
   dataProvenance?: DataProvenance;
+  researchQuestionDetails?: ResearchQuestion;
 }
 
 export interface NotebookFrontmatter {
@@ -503,6 +504,26 @@ export function parseInterpretation(content: string): InterpretationFindings | u
 }
 
 /**
+ * Parse the authoritative research_question_json block from the Research Context
+ * section. Returns hypothesis, PICO, and literature references that the markdown
+ * rendering shows but does not preserve in parse-friendly form.
+ */
+export function parseResearchQuestionDetails(content: string): ResearchQuestion | undefined {
+  const section = getSection(content, "Research Context");
+  if (!section) return undefined;
+
+  const match = section.match(/research_question_json:\s*'([\s\S]*?)'\s*\n/);
+  if (!match) return undefined;
+
+  try {
+    const json = match[1].replace(/''/g, "'");
+    return JSON.parse(json) as ResearchQuestion;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Parse the Data Provenance YAML block (authoritative) from the Data Provenance section.
  * The block is a single `provenance_json: '<json>'` line to bypass nested-array
  * limits of the handwritten YAML parser.
@@ -594,6 +615,7 @@ export function parseNotebook(content: string): ParsedNotebook | null {
     galaxyReferences: parseGalaxyReferences(content),
     interpretation: parseInterpretation(content),
     dataProvenance: parseDataProvenance(content),
+    researchQuestionDetails: parseResearchQuestionDetails(content),
   };
 }
 
@@ -726,6 +748,10 @@ export function notebookToPlan(notebook: ParsedNotebook): AnalysisPlan {
 
   if (notebook.dataProvenance) {
     plan.dataProvenance = notebook.dataProvenance;
+  }
+
+  if (notebook.researchQuestionDetails) {
+    plan.researchQuestion = notebook.researchQuestionDetails;
   }
 
   return plan;

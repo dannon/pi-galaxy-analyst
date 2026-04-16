@@ -357,6 +357,67 @@ describe("notebook with lifecycle phases", () => {
     expect(markdown).toContain("PICO Framework");
   });
 
+  it("round-trips hypothesis, PICO, and literature references", () => {
+    const plan = createPlan({
+      title: "Drug Study",
+      researchQuestion: "Does drug X work?",
+      dataDescription: "RNA-seq",
+      expectedOutcomes: ["DEGs"],
+      constraints: [],
+    });
+
+    setResearchQuestion({
+      rawQuestion: "Does drug X work?",
+      hypothesis: "Drug X reduces tumor gene expression",
+      pico: {
+        population: "HeLa cells",
+        intervention: "Drug X 10uM",
+        comparison: "DMSO vehicle",
+        outcome: "Gene expression changes",
+      },
+    });
+    addLiteratureRef({
+      title: "Foundational Paper",
+      pmid: "12345678",
+      year: 2024,
+      authors: ["Smith J", "Doe A"],
+      journal: "Nature",
+      relevance: "Established Drug X mechanism",
+    });
+    addLiteratureRef({
+      title: "Follow-up Study",
+      doi: "10.1234/example",
+      year: 2025,
+      relevance: "Characterized resistance pathways",
+    });
+
+    const markdown = generateNotebook(plan);
+    const parsed = parseNotebook(markdown);
+    const restored = notebookToPlan(parsed!);
+
+    expect(restored.researchQuestion).toBeTruthy();
+    expect(restored.researchQuestion!.hypothesis).toBe(
+      "Drug X reduces tumor gene expression"
+    );
+    expect(restored.researchQuestion!.pico).toEqual({
+      population: "HeLa cells",
+      intervention: "Drug X 10uM",
+      comparison: "DMSO vehicle",
+      outcome: "Gene expression changes",
+    });
+    expect(restored.researchQuestion!.literatureRefs).toHaveLength(2);
+    expect(restored.researchQuestion!.literatureRefs[0]).toMatchObject({
+      title: "Foundational Paper",
+      pmid: "12345678",
+      year: 2024,
+      journal: "Nature",
+      relevance: "Established Drug X mechanism",
+    });
+    expect(restored.researchQuestion!.literatureRefs[1].doi).toBe(
+      "10.1234/example"
+    );
+  });
+
   it("includes literature references in notebook", () => {
     const plan = createPlan({
       title: "Test",
