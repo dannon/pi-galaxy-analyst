@@ -821,7 +821,12 @@ window.orbit.onUiRequest((request) => {
     const notifyType = (request as Record<string, unknown>).notifyType as string | undefined;
     if (message) {
       const prefix = notifyType === "warning" ? "⚠️ " : notifyType === "error" ? "❌ " : "";
-      chat.addInfoMessage(prefix + message.replace(/</g, "&lt;"));
+      const escaped = (prefix + message).replace(/</g, "&lt;");
+      // Preserve newlines + indentation for multi-line status/profile dumps.
+      const html = escaped.includes("\n")
+        ? `<div class="notify-preformatted">${escaped}</div>`
+        : escaped;
+      chat.addInfoMessage(html);
     }
     return;
   }

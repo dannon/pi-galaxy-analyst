@@ -1231,6 +1231,13 @@ body:not(.artifact-collapsed) #artifact-toggle {
   font-size: 12px;
 }
 
+.notify-preformatted {
+  white-space: pre-wrap;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
 /* ── Plan Toolbar ──────────────────────────────────────────────────────────── */
 
 .plan-toolbar {

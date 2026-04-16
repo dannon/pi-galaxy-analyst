@@ -306,7 +306,7 @@ export default function galaxyAnalystExtension(pi: ExtensionAPI): void {
         lines.push('');
       }
 
-      ctx.ui.setWidget("decisions-view", lines);
+      ctx.ui.notify(lines.join("\n"), "info");
     },
   });
 
@@ -431,7 +431,7 @@ export default function galaxyAnalystExtension(pi: ExtensionAPI): void {
       lines.push("");
       lines.push("Use /connect <name> to switch, or /connect to add a new server.");
 
-      ctx.ui.setWidget("profiles-view", lines);
+      ctx.ui.notify(lines.join("\n"), "info");
     },
   });
 
@@ -445,7 +445,7 @@ export default function galaxyAnalystExtension(pi: ExtensionAPI): void {
       const plan = getCurrentPlan();
 
       const lines: string[] = [];
-      lines.push("🔬 gxypi Status");
+      lines.push("🔬 Loom Status");
       lines.push("");
 
       // Connection status
@@ -489,7 +489,7 @@ export default function galaxyAnalystExtension(pi: ExtensionAPI): void {
         lines.push("   Use analysis_notebook_create to persist");
       }
 
-      ctx.ui.setWidget("status-view", lines);
+      ctx.ui.notify(lines.join("\n"), "info");
     },
   });
 
