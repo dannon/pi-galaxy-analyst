@@ -93,9 +93,11 @@ function sendStartupGreeting(pi: ExtensionAPI): void {
   const plan = getCurrentPlan();
   const hasCredentials = process.env.GALAXY_URL && process.env.GALAXY_API_KEY;
 
+  // Galaxy MCP gets credentials via env vars -- no need to pass them through
+  // the LLM. Just tell it to connect if credentials are configured.
   const connectInstr = hasCredentials
-    ? ` Call galaxy_connect(url="${process.env.GALAXY_URL}", api_key="${process.env.GALAXY_API_KEY}") in this response.` +
-      ` ONLY call galaxy_connect — do NOT call any other Galaxy tools (no get_tool_panel, no get_server_info, no search_tools, etc.).`
+    ? ` Galaxy credentials are configured -- call galaxy_connect() to establish the connection.` +
+      ` Do NOT call any other Galaxy tools until connected.`
     : "";
 
   if (plan) {

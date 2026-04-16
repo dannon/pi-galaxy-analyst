@@ -14,7 +14,8 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Loom is a standalone product — suppress Pi's own update notifications
+// Loom is a standalone product — suppress Pi's branding and update checks.
+// quietStartup hides the keybinding banner + resource listing on launch.
 process.env.PI_SKIP_VERSION_CHECK = "1";
 
 // Resolve extension paths relative to this script
@@ -413,4 +414,22 @@ if (await handleInformationalCommand()) {
 }
 
 checkLLMProvider();
+
+// Suppress Pi's keybinding banner and resource listing. Loom is the product
+// identity -- users shouldn't see Pi internals unless they pass --verbose.
+if (!hasArg("--verbose")) {
+  const piSettingsPath = join(agentDir, "settings.json");
+  try {
+    let piSettings = {};
+    if (existsSync(piSettingsPath)) {
+      piSettings = JSON.parse(readFileSync(piSettingsPath, "utf-8"));
+    }
+    if (!piSettings.quietStartup) {
+      piSettings.quietStartup = true;
+      mkdirSync(dirname(piSettingsPath), { recursive: true });
+      writeFileSync(piSettingsPath, JSON.stringify(piSettings, null, 2));
+    }
+  } catch {}
+}
+
 main(args);

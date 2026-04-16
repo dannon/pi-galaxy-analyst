@@ -66,7 +66,7 @@ export function setupContextInjection(pi: ExtensionAPI): void {
         galaxyContext += `\nCurrent history: ${state.currentHistoryId}`;
       }
     } else if (hasCredentials) {
-      galaxyContext = `Galaxy: Credentials available but not yet connected. Call galaxy_connect(url="${process.env.GALAXY_URL}", api_key="${process.env.GALAXY_API_KEY}") NOW — do this on your very first response, before anything else.`;
+      galaxyContext = `Galaxy: Credentials configured for ${process.env.GALAXY_URL}. Call galaxy_connect() to establish the connection -- do this before calling any other Galaxy tools.`;
     } else {
       galaxyContext = 'Galaxy: Not connected. The researcher can use /connect to set up credentials.';
     }
