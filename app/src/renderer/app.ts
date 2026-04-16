@@ -812,9 +812,143 @@ window.orbit.onAgentEvent((event) => {
 
 // ── UI Requests (from extension via Pi.dev) ──────────────────────────────────
 
+// Extension-request modal (input / select / confirm). One at a time —
+// showExtModal() serializes via pending promise so overlapping requests queue.
+const extOverlay = document.getElementById("ext-overlay")!;
+const extTitleEl = document.getElementById("ext-title")!;
+const extMessageEl = document.getElementById("ext-message")!;
+const extInputEl = document.getElementById("ext-input") as HTMLInputElement;
+const extOptionsEl = document.getElementById("ext-options")!;
+const extCancelBtn = document.getElementById("ext-cancel") as HTMLButtonElement;
+const extConfirmBtn = document.getElementById("ext-confirm") as HTMLButtonElement;
+const extAcceptBtn = document.getElementById("ext-accept") as HTMLButtonElement;
+const extDenyBtn = document.getElementById("ext-deny") as HTMLButtonElement;
+
+function hideExtModal(): void {
+  extOverlay.classList.add("hidden");
+  extMessageEl.classList.add("hidden");
+  extInputEl.classList.add("hidden");
+  extOptionsEl.classList.add("hidden");
+  extConfirmBtn.classList.add("hidden");
+  extAcceptBtn.classList.add("hidden");
+  extDenyBtn.classList.add("hidden");
+  extOptionsEl.innerHTML = "";
+  extInputEl.value = "";
+}
+
+function openExtInput(id: string, title: string, placeholder?: string): void {
+  extTitleEl.textContent = title;
+  extInputEl.classList.remove("hidden");
+  extInputEl.placeholder = placeholder || "";
+  extConfirmBtn.classList.remove("hidden");
+  extConfirmBtn.textContent = "OK";
+  extOverlay.classList.remove("hidden");
+  setTimeout(() => extInputEl.focus(), 0);
+
+  const respond = (value: string | undefined) => {
+    window.orbit.respondToUiRequest(id, value === undefined ? { cancelled: true } : { value });
+    hideExtModal();
+    cleanup();
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Enter") { e.preventDefault(); respond(extInputEl.value); }
+    if (e.key === "Escape") { e.preventDefault(); respond(undefined); }
+  };
+  const onOk = () => respond(extInputEl.value);
+  const onCancel = () => respond(undefined);
+  const cleanup = () => {
+    extInputEl.removeEventListener("keydown", onKey);
+    extConfirmBtn.removeEventListener("click", onOk);
+    extCancelBtn.removeEventListener("click", onCancel);
+  };
+  extInputEl.addEventListener("keydown", onKey);
+  extConfirmBtn.addEventListener("click", onOk);
+  extCancelBtn.addEventListener("click", onCancel);
+}
+
+function openExtSelect(id: string, title: string, options: string[]): void {
+  extTitleEl.textContent = title;
+  extOptionsEl.classList.remove("hidden");
+  extOverlay.classList.remove("hidden");
+
+  const respond = (value: string | undefined) => {
+    window.orbit.respondToUiRequest(id, value === undefined ? { cancelled: true } : { value });
+    hideExtModal();
+    cleanup();
+  };
+
+  options.forEach((opt) => {
+    const el = document.createElement("div");
+    el.className = "ext-option";
+    el.textContent = opt;
+    el.addEventListener("click", () => respond(opt));
+    extOptionsEl.appendChild(el);
+  });
+
+  const onCancel = () => respond(undefined);
+  const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); respond(undefined); } };
+  const cleanup = () => {
+    extCancelBtn.removeEventListener("click", onCancel);
+    document.removeEventListener("keydown", onKey);
+  };
+  extCancelBtn.addEventListener("click", onCancel);
+  document.addEventListener("keydown", onKey);
+}
+
+function openExtConfirm(id: string, title: string, message: string): void {
+  extTitleEl.textContent = title;
+  extMessageEl.textContent = message;
+  extMessageEl.classList.remove("hidden");
+  extAcceptBtn.classList.remove("hidden");
+  extDenyBtn.classList.remove("hidden");
+  extOverlay.classList.remove("hidden");
+
+  const respond = (confirmed: boolean | undefined) => {
+    window.orbit.respondToUiRequest(id, confirmed === undefined ? { cancelled: true } : { confirmed });
+    hideExtModal();
+    cleanup();
+  };
+  const onYes = () => respond(true);
+  const onNo = () => respond(false);
+  const onCancel = () => respond(undefined);
+  const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); respond(undefined); } };
+  const cleanup = () => {
+    extAcceptBtn.removeEventListener("click", onYes);
+    extDenyBtn.removeEventListener("click", onNo);
+    extCancelBtn.removeEventListener("click", onCancel);
+    document.removeEventListener("keydown", onKey);
+  };
+  extAcceptBtn.addEventListener("click", onYes);
+  extDenyBtn.addEventListener("click", onNo);
+  extCancelBtn.addEventListener("click", onCancel);
+  document.addEventListener("keydown", onKey);
+}
+
 window.orbit.onUiRequest((request) => {
   console.log("[orbit] UI request:", request.method, (request as Record<string, unknown>).widgetKey || "");
   const method = request.method;
+  const id = (request as Record<string, unknown>).id as string;
+
+  if (method === "input") {
+    const title = (request as Record<string, unknown>).title as string;
+    const placeholder = (request as Record<string, unknown>).placeholder as string | undefined;
+    openExtInput(id, title, placeholder);
+    return;
+  }
+
+  if (method === "select") {
+    const title = (request as Record<string, unknown>).title as string;
+    const options = ((request as Record<string, unknown>).options as string[]) || [];
+    openExtSelect(id, title, options);
+    return;
+  }
+
+  if (method === "confirm") {
+    const title = (request as Record<string, unknown>).title as string;
+    const message = (request as Record<string, unknown>).message as string;
+    openExtConfirm(id, title, message);
+    return;
+  }
 
   if (method === "notify") {
     const message = (request as Record<string, unknown>).message as string | undefined;

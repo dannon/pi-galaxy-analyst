@@ -1238,6 +1238,51 @@ body:not(.artifact-collapsed) #artifact-toggle {
   line-height: 1.5;
 }
 
+/* ── Extension request modal ───────────────────────────────────────────── */
+
+.ext-message {
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.ext-input {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  background: var(--bg-inset, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  border-radius: 4px;
+  color: var(--text, inherit);
+  box-sizing: border-box;
+}
+
+.ext-input:focus {
+  outline: none;
+  border-color: var(--accent, #4a90e2);
+}
+
+.ext-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.ext-option {
+  padding: 8px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: var(--bg-inset, rgba(255, 255, 255, 0.04));
+}
+
+.ext-option:hover,
+.ext-option.focused {
+  background: rgba(74, 144, 226, 0.15);
+  border-color: var(--accent, #4a90e2);
+}
+
 /* ── Plan Toolbar ──────────────────────────────────────────────────────────── */
 
 .plan-toolbar {

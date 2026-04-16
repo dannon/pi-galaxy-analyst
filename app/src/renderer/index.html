@@ -301,6 +301,28 @@
     </div>
   </div>
 
+  <!-- Generic extension-request modal (input / select / confirm from the brain) -->
+  <div id="ext-overlay" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="ext-title">Request</h2>
+      </div>
+      <div class="modal-body">
+        <div id="ext-message" class="ext-message hidden"></div>
+        <input id="ext-input" type="text" class="ext-input hidden" />
+        <div id="ext-options" class="ext-options hidden"></div>
+      </div>
+      <div class="modal-footer">
+        <div class="modal-actions">
+          <button id="ext-cancel" class="plan-btn">Cancel</button>
+          <button id="ext-confirm" class="plan-btn primary hidden">OK</button>
+          <button id="ext-deny" class="plan-btn hidden">No</button>
+          <button id="ext-accept" class="plan-btn primary hidden">Yes</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script type="module" src="./app.ts"></script>
 </body>
 </html>
