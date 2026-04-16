@@ -1,8 +1,9 @@
 /**
- * gxypi - Galaxy co-scientist extension for Pi.dev
+ * Loom — Galaxy co-scientist extension for Pi.dev.
  *
- * Provides plan-based analysis orchestration for Galaxy bioinformatics workflows.
+ * Brain-side runtime that plan-orchestrates Galaxy bioinformatics analyses.
  * Manages analysis state, registers custom tools, and injects context.
+ * Consumed by shells (the gxypi CLI, the Orbit Electron app, future web UIs).
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
@@ -148,14 +149,14 @@ export default function galaxyAnalystExtension(pi: ExtensionAPI): void {
       // Fresh session with Galaxy credentials
       pi.sendUserMessage(
         `Session started, no existing analysis in this directory. ` +
-        `Give a brief welcome to gxypi, then ask what I'd like to work on — what research question or data do I have? ` +
+        `Give a brief welcome to Loom, then ask what I'd like to work on — what research question or data do I have? ` +
         `Keep the greeting to 2-3 sentences.${connectInstr}`
       );
     } else {
       // Fresh session, no credentials
       pi.sendUserMessage(
         `Session started, no existing analysis in this directory and no Galaxy server configured. ` +
-        `Give a brief welcome to gxypi, mention I can use /connect to set up a Galaxy server, ` +
+        `Give a brief welcome to Loom, mention I can use /connect to set up a Galaxy server, ` +
         `and ask what I'd like to work on. Keep it to 2-3 sentences.`
       );
     }

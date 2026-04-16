@@ -90,7 +90,7 @@ parameters. When the researcher makes selections, record them with \`brc_set_con
 
       return {
         systemPrompt: `
-## gxypi Status
+## Loom Status
 No active analysis plan.
 
 **Start a plan immediately.** As soon as the researcher describes their question or data,
