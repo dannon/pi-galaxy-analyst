@@ -204,9 +204,16 @@ if (loomConfig.llm?.apiKey) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Ensure Galaxy MCP is configured before Pi starts
+// Configure Galaxy MCP based on executionMode
+//
+// Remote (default): register the Galaxy MCP server so the LLM can call
+// Galaxy tools directly. Reproducibility + large-scale compute lives here.
+// Local: strip Galaxy MCP entirely. The LLM has no Galaxy tools available,
+// only local run_command / plan management / notebook updates. This is what
+// the "Local" toggle in Orbit's masthead actually flips.
 // ─────────────────────────────────────────────────────────────────────────────
 
+const executionMode = loomConfig.executionMode || "remote";
 const mcpConfigPath = join(agentDir, "mcp.json");
 
 let mcpConfig = {};
@@ -216,17 +223,24 @@ if (!isInformationalCommand) {
   }
 
   mcpConfig.mcpServers = mcpConfig.mcpServers || {};
-  if (!mcpConfig.mcpServers.galaxy) {
-    mcpConfig.mcpServers.galaxy = {
-      command: "uvx",
-      args: ["galaxy-mcp"],
-    };
+
+  if (executionMode === "remote") {
+    if (!mcpConfig.mcpServers.galaxy) {
+      mcpConfig.mcpServers.galaxy = {
+        command: "uvx",
+        args: ["galaxy-mcp"],
+      };
+    }
+    // Expose Galaxy tools as direct (first-class) tools so the LLM can call
+    // them by name instead of going through the mcp() proxy gateway.
+    if (!mcpConfig.mcpServers.galaxy.directTools) {
+      mcpConfig.mcpServers.galaxy.directTools = true;
+    }
+  } else {
+    // Local mode: tear down Galaxy MCP if it was previously registered.
+    delete mcpConfig.mcpServers.galaxy;
   }
-  // Expose Galaxy tools as direct (first-class) tools so the LLM can call them
-  // by name instead of going through the mcp() proxy gateway
-  if (!mcpConfig.mcpServers.galaxy.directTools) {
-    mcpConfig.mcpServers.galaxy.directTools = true;
-  }
+
   mkdirSync(dirname(mcpConfigPath), { recursive: true });
   writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2));
 }

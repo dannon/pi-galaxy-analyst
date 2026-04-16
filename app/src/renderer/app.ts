@@ -206,7 +206,7 @@ function applyExecModeUI(mode: "local" | "remote", galaxyConfigured: boolean): v
 
 async function loadExecModeFromConfig(): Promise<void> {
   const cfg = (await window.orbit.getConfig()) as Record<string, unknown>;
-  const mode = (cfg.executionMode as "local" | "remote") || "local";
+  const mode = (cfg.executionMode as "local" | "remote") || "remote";
   const galaxy = cfg.galaxy as { active?: string; profiles?: Record<string, unknown> } | undefined;
   const galaxyConfigured = !!(galaxy?.active && galaxy?.profiles?.[galaxy.active]);
   applyExecModeUI(mode, galaxyConfigured);
@@ -272,7 +272,7 @@ welcomeSave.addEventListener("click", async () => {
       model: welcomeModel.value,
       apiKey,
     },
-    executionMode: "local",
+    executionMode: "remote",
   };
 
   const galaxyUrl = welcomeGalaxyUrl.value.trim();
