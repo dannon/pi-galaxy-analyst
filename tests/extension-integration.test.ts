@@ -131,6 +131,9 @@ const EXPECTED_TOOLS = [
   "gtn_search",
   "gtn_fetch",
 
+  // Assertions
+  "analysis_assert",
+
   // Shell-facing tools (structured widget emitters)
   "report_result",
   "analyze_plan_parameters",

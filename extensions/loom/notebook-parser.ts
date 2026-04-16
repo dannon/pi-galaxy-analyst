@@ -27,6 +27,7 @@ import type {
   BiologicalFinding,
   FindingCategory,
   WorkflowStructure,
+  Assertion,
 } from "./types";
 
 /**
@@ -48,6 +49,7 @@ export interface ParsedNotebook {
   dataProvenance?: DataProvenance;
   researchQuestionDetails?: ResearchQuestion;
   publication?: PublicationMaterials;
+  assertions?: Assertion[];
 }
 
 export interface NotebookFrontmatter {
@@ -505,6 +507,24 @@ export function parseInterpretation(content: string): InterpretationFindings | u
 }
 
 /**
+ * Parse the authoritative assertions_json block from the Verification section.
+ */
+export function parseAssertions(content: string): Assertion[] | undefined {
+  const section = getSection(content, "Verification");
+  if (!section) return undefined;
+
+  const match = section.match(/assertions_json:\s*'([\s\S]*?)'\s*\n/);
+  if (!match) return undefined;
+
+  try {
+    const json = match[1].replace(/''/g, "'");
+    return JSON.parse(json) as Assertion[];
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Parse the authoritative publication_json block from the Publication Materials section.
  * Covers methods draft, figures, supplementary data, and data sharing info.
  */
@@ -637,6 +657,7 @@ export function parseNotebook(content: string): ParsedNotebook | null {
     dataProvenance: parseDataProvenance(content),
     researchQuestionDetails: parseResearchQuestionDetails(content),
     publication: parsePublicationMaterials(content),
+    assertions: parseAssertions(content),
   };
 }
 
@@ -777,6 +798,10 @@ export function notebookToPlan(notebook: ParsedNotebook): AnalysisPlan {
 
   if (notebook.publication) {
     plan.publication = notebook.publication;
+  }
+
+  if (notebook.assertions && notebook.assertions.length > 0) {
+    plan.assertions = notebook.assertions;
   }
 
   return plan;

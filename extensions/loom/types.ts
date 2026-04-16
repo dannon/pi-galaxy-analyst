@@ -291,6 +291,60 @@ export interface AnalysisPlan {
 
   // Publication materials (Phase 5)
   publication?: PublicationMaterials;
+
+  // Structured claim checks recorded at analysis time
+  assertions?: Assertion[];
+}
+
+/**
+ * The six assertion kinds cover what shows up in a real paper-audit pass:
+ *   scalar        -- numeric value within tolerance (e.g. CHIP_TF score 4.169 +/- 5%)
+ *   categorical   -- string equality (e.g. top variant is rs334)
+ *   rank          -- integer rank within tolerance positions
+ *   set_member    -- observed in a discrete expected set (credible-set VCF, cell type list)
+ *   coord_range   -- observed coord falls within [min, max] interval
+ *   count         -- integer count within tolerance
+ */
+export type AssertionKind =
+  | 'scalar'
+  | 'categorical'
+  | 'rank'
+  | 'set_member'
+  | 'coord_range'
+  | 'count';
+
+/**
+ * Verdict tells the researcher "did my claim hold?" without forcing boolean
+ * pass/fail when a scalar drifted a few percent.
+ */
+export type AssertionVerdict =
+  | 'exact_match'
+  | 'within_tolerance'
+  | 'within_range'
+  | 'drift'
+  | 'mismatch'
+  | 'out_of_range'
+  | 'pending';
+
+export interface Assertion {
+  id: string;
+  stepId?: string;
+  claim: string;
+  kind: AssertionKind;
+  expected: unknown;
+  observed: unknown;
+  /** Absolute tolerance for rank/count; fractional (0.05 = 5%) for scalar. */
+  tolerance?: number;
+  datasetId?: string;
+  source?: string;
+  verdict: AssertionVerdict;
+  recordedAt: string;
+  /** Optional cross-plan reference resolved at assertion time. */
+  expectedFromPlan?: {
+    planId: string;
+    stepId: string;
+    field: string;
+  };
 }
 
 export type PlanStatus = 'draft' | 'active' | 'completed' | 'abandoned';

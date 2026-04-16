@@ -53,6 +53,9 @@ import {
   setBRCAssembly,
   setBRCWorkflow,
   getBRCContext,
+  // Assertions
+  recordAssertion,
+  resolveExpectedFromPlan,
 } from "./state";
 import type {
   StepStatus,
@@ -2671,6 +2674,92 @@ analyses in Galaxy.`,
         return new Text("❌ GTN fetch failed");
       }
       return new Text(`📖 Fetched GTN tutorial (${d?.length || 0} chars)`);
+    },
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Structured assertions (verification table)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  pi.registerTool({
+    name: "analysis_assert",
+    label: "Record assertion",
+    description:
+      "Record a structured claim check against observed analysis output. Use when " +
+      "comparing a numerical value, top variant, rank, set membership, coordinate, or " +
+      "count against an expected value from a paper, prior run, or spec. Verdict is " +
+      "computed automatically from the expected/observed/tolerance triple.",
+    parameters: Type.Object({
+      stepId: Type.Optional(Type.String({ description: "Step this assertion tests" })),
+      claim: Type.String({ description: "Human-readable claim, e.g. 'top ISM position CHIP_TF score is 4.17'" }),
+      kind: Type.Union([
+        Type.Literal("scalar"),
+        Type.Literal("categorical"),
+        Type.Literal("rank"),
+        Type.Literal("set_member"),
+        Type.Literal("coord_range"),
+        Type.Literal("count"),
+      ], { description: "Assertion kind; drives the verdict logic" }),
+      expected: Type.Unknown({
+        description:
+          "Expected value. Scalar/rank/count: number. Categorical: string. " +
+          "set_member: array. coord_range: [min, max] number pair.",
+      }),
+      observed: Type.Unknown({ description: "Value actually observed in this run" }),
+      tolerance: Type.Optional(Type.Number({
+        description:
+          "Scalar: fractional (0.05 = 5% of expected). Rank/count: integer absolute.",
+      })),
+      datasetId: Type.Optional(Type.String({ description: "Galaxy dataset id the observed value came from" })),
+      source: Type.Optional(Type.String({ description: "Source of the expected value: paper DOI, prior plan id, spec" })),
+      expectedFromPlan: Type.Optional(Type.Object({
+        planId: Type.String(),
+        stepId: Type.String(),
+        field: Type.String({ description: "Dotted path on AnalysisStep (e.g. 'result.summary')" }),
+      }, { description: "Resolve expected value from another plan's notebook at assertion time" })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      if (!getCurrentPlan()) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ success: false, error: "No active plan" }) }],
+          details: { verdict: "pending" },
+        };
+      }
+
+      let expectedValue = params.expected;
+      if (params.expectedFromPlan) {
+        try {
+          const resolved = await resolveExpectedFromPlan(params.expectedFromPlan);
+          if (resolved !== undefined) {
+            expectedValue = resolved;
+          }
+        } catch (err) {
+          console.warn("expectedFromPlan resolution failed:", err);
+        }
+      }
+
+      const stored = recordAssertion({
+        stepId: params.stepId,
+        claim: params.claim,
+        kind: params.kind,
+        expected: expectedValue,
+        observed: params.observed,
+        tolerance: params.tolerance,
+        datasetId: params.datasetId,
+        source: params.source,
+        expectedFromPlan: params.expectedFromPlan,
+      });
+
+      await syncToNotebook('frontmatter', { updated: new Date().toISOString() });
+
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify({ success: true, assertion: stored }) }],
+        details: { verdict: stored.verdict, kind: stored.kind },
+      };
+    },
+    renderResult: (result) => {
+      const d = result.details as { verdict?: string; kind?: string } | undefined;
+      return new Text(`✅ assertion ${d?.kind} → ${d?.verdict}`);
     },
   });
 

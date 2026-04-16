@@ -34,6 +34,9 @@ import type {
   BiologicalFinding,
   InterpretationFindings,
   WorkflowStructure,
+  Assertion,
+  AssertionKind,
+  AssertionVerdict,
 } from "./types";
 import {
   generateNotebook,
@@ -887,6 +890,162 @@ export function updateFigure(figureId: string, updates: Partial<FigureSpec>): Fi
   state.currentPlan.updated = new Date().toISOString();
   notifyPlanChange();
   return figure;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Assertion recording + verdict logic
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Compute the verdict for an assertion given expected, observed, and tolerance.
+ * No reliance on plan state; pure function so tests can exercise it directly.
+ */
+export function computeAssertionVerdict(
+  kind: AssertionKind,
+  expected: unknown,
+  observed: unknown,
+  tolerance?: number,
+): AssertionVerdict {
+  switch (kind) {
+    case 'scalar': {
+      const exp = Number(expected);
+      const obs = Number(observed);
+      if (!Number.isFinite(exp) || !Number.isFinite(obs)) return 'mismatch';
+      if (exp === obs) return 'exact_match';
+      const frac = tolerance ?? 0;
+      const allowed = Math.abs(exp * frac);
+      const diff = Math.abs(exp - obs);
+      if (diff <= allowed) return 'within_tolerance';
+      // Drift: close but outside tolerance; cap at 2x the allowed window
+      if (allowed > 0 && diff <= allowed * 2) return 'drift';
+      return 'mismatch';
+    }
+    case 'categorical': {
+      return String(expected) === String(observed) ? 'exact_match' : 'mismatch';
+    }
+    case 'rank':
+    case 'count': {
+      const exp = Number(expected);
+      const obs = Number(observed);
+      if (!Number.isInteger(exp) || !Number.isInteger(obs)) return 'mismatch';
+      if (exp === obs) return 'exact_match';
+      const tol = tolerance ?? 0;
+      return Math.abs(exp - obs) <= tol ? 'within_tolerance' : 'mismatch';
+    }
+    case 'set_member': {
+      if (!Array.isArray(expected)) return 'mismatch';
+      return expected.some((v) => v === observed) ? 'exact_match' : 'mismatch';
+    }
+    case 'coord_range': {
+      if (
+        !Array.isArray(expected) ||
+        expected.length !== 2 ||
+        typeof expected[0] !== 'number' ||
+        typeof expected[1] !== 'number'
+      ) {
+        return 'mismatch';
+      }
+      const obs = Number(observed);
+      if (!Number.isFinite(obs)) return 'mismatch';
+      const [min, max] = expected;
+      return obs >= min && obs <= max ? 'within_range' : 'out_of_range';
+    }
+    default:
+      return 'pending';
+  }
+}
+
+export interface RecordAssertionParams {
+  stepId?: string;
+  claim: string;
+  kind: AssertionKind;
+  expected: unknown;
+  observed: unknown;
+  tolerance?: number;
+  datasetId?: string;
+  source?: string;
+  expectedFromPlan?: Assertion['expectedFromPlan'];
+}
+
+/**
+ * Record an assertion on the current plan. Returns the stored Assertion with
+ * its computed verdict so callers can render it.
+ */
+export function recordAssertion(params: RecordAssertionParams): Assertion {
+  if (!state.currentPlan) {
+    throw new Error("No active plan");
+  }
+
+  if (!state.currentPlan.assertions) {
+    state.currentPlan.assertions = [];
+  }
+
+  const assertion: Assertion = {
+    id: `assertion-${state.currentPlan.assertions.length + 1}`,
+    stepId: params.stepId,
+    claim: params.claim,
+    kind: params.kind,
+    expected: params.expected,
+    observed: params.observed,
+    tolerance: params.tolerance,
+    datasetId: params.datasetId,
+    source: params.source,
+    verdict: computeAssertionVerdict(params.kind, params.expected, params.observed, params.tolerance),
+    recordedAt: new Date().toISOString(),
+    expectedFromPlan: params.expectedFromPlan,
+  };
+
+  state.currentPlan.assertions.push(assertion);
+  state.currentPlan.updated = assertion.recordedAt;
+  notifyPlanChange();
+
+  return assertion;
+}
+
+/**
+ * Resolve a cross-plan reference (expectedFromPlan) by reading another plan's
+ * notebook from disk and extracting a field. Simple dotted-path accessor.
+ * Returns the value or undefined if the plan, step, or field can't be found.
+ */
+export async function resolveExpectedFromPlan(params: {
+  planId: string;
+  stepId: string;
+  field: string;
+  searchDirectories?: string[];
+}): Promise<unknown> {
+  const dirs = params.searchDirectories || [process.cwd()];
+  for (const dir of dirs) {
+    const summaries = await findNotebooks(dir);
+    for (const summary of summaries) {
+      try {
+        const content = await readNotebook(summary.path);
+        const parsed = parseNotebook(content);
+        if (!parsed || parsed.frontmatter.plan_id !== params.planId) continue;
+
+        const plan = notebookToPlan(parsed);
+        const step = plan.steps.find((s) => s.id === params.stepId);
+        if (!step) continue;
+
+        return readNestedField(step, params.field);
+      } catch {
+        continue;
+      }
+    }
+  }
+  return undefined;
+}
+
+function readNestedField(obj: unknown, path: string): unknown {
+  const parts = path.split('.');
+  let cur: unknown = obj;
+  for (const p of parts) {
+    if (cur && typeof cur === 'object' && p in (cur as Record<string, unknown>)) {
+      cur = (cur as Record<string, unknown>)[p];
+    } else {
+      return undefined;
+    }
+  }
+  return cur;
 }
 
 /**

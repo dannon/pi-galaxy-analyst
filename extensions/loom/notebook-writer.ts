@@ -22,6 +22,7 @@ import type {
   InterpretationFindings,
   BiologicalFinding,
   WorkflowStructure,
+  Assertion,
 } from "./types";
 
 /**
@@ -271,6 +272,26 @@ export function generateNotebook(plan: AnalysisPlan): string {
 
   lines.push("---");
   lines.push("");
+
+  // Verification (structured assertions)
+  if (plan.assertions && plan.assertions.length > 0) {
+    lines.push("## Verification");
+    lines.push("");
+    lines.push("```yaml");
+    lines.push(`assertions_json: '${escapeJsonInYaml(plan.assertions)}'`);
+    lines.push("```");
+    lines.push("");
+    lines.push("| Step | Kind | Claim | Expected | Observed | Verdict |");
+    lines.push("|------|------|-------|----------|----------|---------|");
+    for (const a of plan.assertions) {
+      lines.push(
+        `| ${a.stepId || '-'} | ${a.kind} | ${mdTableEscape(a.claim)} | ${mdTableEscape(stringify(a.expected))} | ${mdTableEscape(stringify(a.observed))} | \`${a.verdict}\` |`
+      );
+    }
+    lines.push("");
+    lines.push("---");
+    lines.push("");
+  }
 
   // Interpretation (Phase 4)
   if (plan.interpretation && (plan.interpretation.findings.length > 0 || plan.interpretation.summary)) {
@@ -583,6 +604,17 @@ function escapeYamlString(str: string): string {
  */
 function escapeJsonInYaml(obj: unknown): string {
   return JSON.stringify(obj).replace(/'/g, "''");
+}
+
+function mdTableEscape(value: string): string {
+  return value.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+}
+
+function stringify(value: unknown): string {
+  if (value === null || value === undefined) return '-';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return JSON.stringify(value);
 }
 
 /**
