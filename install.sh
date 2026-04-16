@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# gxypi Installer
+# Loom Installer
 #
 # One-line install:
-#   curl -fsSL https://raw.githubusercontent.com/galaxyproject/gxypi/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/galaxyproject/pi-galaxy-analyst/main/install.sh | bash
 #
 
 set -e
@@ -21,7 +21,7 @@ error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
 echo ""
 echo -e "${GREEN}╔════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║     gxypi Installer                        ║${NC}"
+echo -e "${GREEN}║     Loom Installer                        ║${NC}"
 echo -e "${GREEN}║     Galaxy Co-Scientist for Bioinformatics ║${NC}"
 echo -e "${GREEN}╚════════════════════════════════════════════╝${NC}"
 echo ""
@@ -49,13 +49,13 @@ else
     warn "Neither uv nor python3 found. galaxy-mcp may need manual setup."
 fi
 
-# Install gxypi
-info "Installing gxypi..."
-npm install -g gxypi
-success "gxypi installed"
+# Install loom
+info "Installing loom..."
+npm install -g loom
+success "loom installed"
 
 echo ""
 echo -e "${GREEN}Installation complete!${NC}"
 echo ""
-echo "Run 'gxypi' to start. Use /connect to set your Galaxy credentials."
+echo "Run 'loom' to start. Use /connect to set your Galaxy credentials."
 echo ""

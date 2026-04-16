@@ -1,20 +1,27 @@
-import { app, BrowserWindow, Menu, dialog } from "electron";
-import { mkdirSync, appendFileSync, readFileSync, writeFileSync } from "node:fs";
+import { app, BrowserWindow, Menu, dialog, powerMonitor, nativeImage } from "electron";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import * as fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { registerIpcHandlers } from "./ipc-handlers.js";
 import { AgentManager } from "./agent.js";
+import { ProcMonitor } from "./proc-monitor.js";
 
-const GXYPI_DIR = path.join(os.homedir(), ".gxypi");
-const LOG_FILE = path.join(GXYPI_DIR, "debug.log");
-const WINDOW_STATE_FILE = path.join(GXYPI_DIR, "window-state.json");
+// Workaround for systems where chrome-sandbox isn't suid root
+app.commandLine.appendSwitch("no-sandbox");
 
-const DEBUG = process.argv.includes("--debug") || !!process.env.GXYPI_DEBUG;
+// Orbit-specific shell state lives in ~/.orbit/ so multiple Loom shells can
+// coexist without stepping on each other. Brain config remains at ~/.loom/.
+const ORBIT_DIR = path.join(os.homedir(), ".orbit");
+const LOOM_DIR = path.join(os.homedir(), ".loom");
+const WINDOW_STATE_FILE = path.join(ORBIT_DIR, "window-state.json");
+const DEFAULT_CWD = path.join(LOOM_DIR, "analyses");
 
-function debugLog(...args: unknown[]): void {
-  if (!DEBUG) return;
-  const line = `[${new Date().toISOString()}] ${args.map(a => typeof a === "string" ? a : JSON.stringify(a)).join(" ")}\n`;
-  try { appendFileSync(LOG_FILE, line); } catch {}
+declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
+declare const MAIN_WINDOW_VITE_NAME: string;
+
+function log(...args: unknown[]): void {
+  console.log("[main]", ...args);
 }
 
 interface WindowState {
@@ -30,49 +37,108 @@ function loadWindowState(): WindowState {
     const state = JSON.parse(data) as WindowState;
     if (state.width > 0 && state.height > 0) return state;
   } catch {}
-  return { width: 1200, height: 800 };
+  return { width: 1400, height: 900 };
 }
 
 function saveWindowState(win: BrowserWindow): void {
   try {
+    mkdirSync(ORBIT_DIR, { recursive: true });
     const bounds = win.getBounds();
     writeFileSync(WINDOW_STATE_FILE, JSON.stringify(bounds));
   } catch {}
 }
 
-declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
-declare const MAIN_WINDOW_VITE_NAME: string;
-
-function log(...args: unknown[]): void {
-  console.log("[main]", ...args);
-}
-
-const DEFAULT_CWD = path.join(os.homedir(), ".gxypi", "analyses");
-
 let mainWindow: BrowserWindow | null = null;
 let agentManager: AgentManager | null = null;
+let procMonitor: ProcMonitor | null = null;
 
 function getDefaultCwd(): string {
-  const cwd = process.env.GXYPI_CWD || DEFAULT_CWD;
+  // Priority: env var > brain config.defaultCwd > hardcoded default
+  let cwd = process.env.LOOM_CWD;
+  if (!cwd) {
+    try {
+      const configPath = path.join(LOOM_DIR, "config.json");
+      if (fs.existsSync(configPath)) {
+        const cfg = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+        if (cfg.defaultCwd) cwd = cfg.defaultCwd;
+      }
+    } catch {}
+  }
+  cwd = cwd || DEFAULT_CWD;
+  if (cwd.startsWith("~")) cwd = path.join(os.homedir(), cwd.slice(1));
   mkdirSync(cwd, { recursive: true });
   return cwd;
+}
+
+/**
+ * Open an external URL in a new BrowserWindow. Used for things like IGV.js
+ * viewers served on localhost, HTML reports, external docs — anything that
+ * would otherwise navigate the main window away from the Orbit renderer.
+ */
+function openExternalUrlWindow(url: string): void {
+  const win = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    title: url,
+    webPreferences: {
+      sandbox: false,
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  win.setMenuBarVisibility(true);
+  win.loadURL(url).catch((err) => {
+    log("failed to load external url:", url, err);
+  });
 }
 
 function createWindow(cwd: string): void {
   log("creating window, cwd:", cwd);
   const saved = loadWindowState();
 
+  const iconPath = path.join(__dirname, "../../src/renderer/assets/icons/icon-512.png");
+  const appIcon = nativeImage.createFromPath(iconPath);
+  log("icon path:", iconPath, "empty:", appIcon.isEmpty(), "size:", appIcon.getSize());
+
   mainWindow = new BrowserWindow({
     ...saved,
-    minWidth: 700,
-    minHeight: 500,
-    title: "gxypi",
+    minWidth: 800,
+    minHeight: 600,
+    title: "Orbit",
+    icon: appIcon,
+    show: true,
     titleBarStyle: "hiddenInset",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
     },
+  });
+
+  if (process.platform === "darwin" && !appIcon.isEmpty()) {
+    app.dock?.setIcon(appIcon);
+  }
+
+  mainWindow.once("ready-to-show", () => {
+    mainWindow?.show();
+    mainWindow?.focus();
+  });
+
+  // Keep the main window on the renderer; external URLs open in new windows.
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    const devUrl = MAIN_WINDOW_VITE_DEV_SERVER_URL;
+    if (devUrl && url.startsWith(devUrl)) return;
+    if (url.startsWith("file://")) return;
+    event.preventDefault();
+    log("intercepted external navigation → new window:", url);
+    openExternalUrlWindow(url);
+  });
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    log("window open handler → new window:", url);
+    openExternalUrlWindow(url);
+    return { action: "deny" };
   });
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
@@ -86,17 +152,20 @@ function createWindow(cwd: string): void {
   agentManager = new AgentManager(mainWindow, cwd);
   registerIpcHandlers(agentManager);
 
-  // Pipe renderer console to file for debugging
-  mainWindow.webContents.on("console-message", (_e, level, message, line, sourceId) => {
-    const prefix = ["LOG", "WARN", "ERR"][level] || "?";
-    debugLog(`[renderer:${prefix}] ${message} (${sourceId}:${line})`);
-  });
+  procMonitor = new ProcMonitor(mainWindow, () => agentManager?.getPid() ?? null);
 
   mainWindow.webContents.once("did-finish-load", () => {
-    debugLog("renderer did-finish-load, starting agent");
     log("renderer loaded, starting agent");
     agentManager!.start();
+    procMonitor!.start();
   });
+
+  // Diagnostic listeners (macOS display-sleep UI-wipe bug tracking)
+  const wc = mainWindow.webContents;
+  wc.on("render-process-gone", (_e, details) =>
+    log("[diag] render-process-gone:", details.reason, "exitCode:", details.exitCode));
+  wc.on("unresponsive", () => log("[diag] webContents unresponsive"));
+  wc.on("responsive", () => log("[diag] webContents responsive"));
 
   mainWindow.on("close", () => {
     if (mainWindow) saveWindowState(mainWindow);
@@ -108,12 +177,22 @@ function createWindow(cwd: string): void {
   });
 }
 
+function openPreferences(): void {
+  if (mainWindow) mainWindow.webContents.send("menu:open-preferences");
+}
+
 function buildMenu(): void {
   const template: Electron.MenuItemConstructorOptions[] = [
     {
-      label: "gxypi",
+      label: "Orbit",
       submenu: [
         { role: "about" },
+        { type: "separator" },
+        {
+          label: "Preferences...",
+          accelerator: "CmdOrCtrl+,",
+          click: openPreferences,
+        },
         { type: "separator" },
         { role: "quit" },
       ],
@@ -125,17 +204,18 @@ function buildMenu(): void {
           label: "Open Analysis Directory...",
           accelerator: "CmdOrCtrl+O",
           click: async () => {
-            if (!agentManager) return;
+            if (!agentManager || !mainWindow) return;
             const result = await dialog.showOpenDialog({
               title: "Choose analysis directory",
               defaultPath: agentManager.getCwd(),
               properties: ["openDirectory", "createDirectory"],
             });
             if (result.canceled || result.filePaths.length === 0) return;
-            log("switching cwd to:", result.filePaths[0]);
-            agentManager.setCwd(result.filePaths[0]);
-            agentManager.stop();
-            agentManager.start();
+            const dir = result.filePaths[0];
+            log("switching cwd to:", dir);
+            agentManager.setCwd(dir);
+            // Notify renderer to update UI and inform agent — no restart
+            mainWindow.webContents.send("agent:cwd-changed", dir);
           },
         },
       ],
@@ -150,17 +230,17 @@ function buildMenu(): void {
         { role: "copy" },
         { role: "paste" },
         { role: "selectAll" },
+        { type: "separator" },
+        {
+          label: "Preferences...",
+          accelerator: "CmdOrCtrl+,",
+          click: openPreferences,
+        },
       ],
     },
     {
       label: "View",
       submenu: [
-        {
-          label: "Toggle Sidebar",
-          accelerator: "CmdOrCtrl+B",
-          click: () => mainWindow?.webContents.send("view:toggle-sidebar"),
-        },
-        { type: "separator" },
         { role: "toggleDevTools" },
         { role: "resetZoom" },
         { role: "zoomIn" },
@@ -173,10 +253,10 @@ function buildMenu(): void {
       label: "Help",
       submenu: [
         {
-          label: "gxypi Documentation",
+          label: "Loom Documentation",
           click: () => {
             import("electron").then(({ shell }) => {
-              shell.openExternal("https://github.com/galaxyproject/gxypi");
+              shell.openExternal("https://github.com/galaxyproject/pi-galaxy-analyst");
             });
           },
         },
@@ -187,14 +267,17 @@ function buildMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+app.setName("Orbit");
+
 app.whenReady().then(() => {
-  debugLog("app ready");
   log("app ready");
   buildMenu();
-
   const cwd = getDefaultCwd();
   log("cwd:", cwd);
   createWindow(cwd);
+
+  powerMonitor.on("suspend", () => log("[diag] powerMonitor suspend"));
+  powerMonitor.on("resume", () => log("[diag] powerMonitor resume"));
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

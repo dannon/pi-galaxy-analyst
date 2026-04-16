@@ -1,5 +1,5 @@
 {
-  "name": "gxypi",
+  "name": "loom",
   "version": "0.1.0",
   "type": "module",
   "description": "AI co-scientist for Galaxy bioinformatics, built on Pi.dev",
@@ -13,10 +13,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/galaxyproject/gxypi"
+    "url": "https://github.com/galaxyproject/pi-galaxy-analyst"
   },
   "bin": {
-    "gxypi": "./bin/gxypi.js"
+    "loom": "./bin/loom.js"
   },
   "pi": {
     "extensions": [

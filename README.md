@@ -1,72 +1,180 @@
-# gxypi
+# Loom
 
-An AI co-scientist for [Galaxy](https://galaxyproject.org) bioinformatics, built on [Pi.dev](https://pi.dev).
+An AI research harness for [Galaxy](https://galaxyproject.org) bioinformatics, built on [Pi.dev](https://pi.dev).
 
-gxypi turns Pi into a structured analysis partner — it creates plans, runs Galaxy tools, documents every decision, and saves everything to a persistent notebook you can share, resume, and reproduce.
+Loom weaves the threads of a research project -- question, data, analysis, interpretation, publication -- into a durable, resumable notebook. It creates plans, runs Galaxy tools, documents every decision, and keeps the whole record reproducible.
 
-The primary product experience is terminal-first. The Electron app in [`app/`](app/) is an optional desktop shell around the same gxypi RPC runtime -- Galaxy-branded, with window state persistence, a working directory picker, and thinking/text streaming in the chat panel. It's a convenience wrapper, not the only supported way to use gxypi.
+This repo hosts both the brain and a reference shell:
 
-## Current Status
+- **Loom** is the *brain* -- the Pi.dev agent runtime in [`extensions/galaxy-analyst/`](extensions/galaxy-analyst/) plus the RPC contract it exposes. Plan state, notebook persistence, Galaxy integration, the five-phase lifecycle, provenance.
+- **`loom`** is the terminal CLI consumer. First-class and the primary validation path. Installed from npm; reads brain-level config from `~/.loom/config.json`.
+- **Orbit** (in [`app/`](app/)) is the Electron desktop shell -- chat + dual-pane artifact layout with a Galaxy-themed step graph. Orbit is optional; the `loom` CLI is a supported standalone path.
 
-gxypi is implemented and locally tested, but live Galaxy validation is still in progress.
+Future shells -- a Galaxy-embedded web UI, a hosted server mode, anything else -- can talk to the same brain over RPC.
+
+The repo is still named `pi-galaxy-analyst`; a rename is a follow-up. Loom is the product identity.
+
+## How it works
+
+1. You open Orbit (or run `loom`) in an analysis directory and describe what you want to do.
+2. The agent builds a formal plan -- research question, phased steps, dependencies -- and stores it in a markdown notebook committed to git on every change.
+3. Each step runs as a Galaxy user-defined tool (default) or a local command, with the agent logging decisions and QC checkpoints as it goes.
+4. In Orbit, the artifact pane auto-reveals the Plan tab, the Steps tab renders a React Flow DAG, and the Notebook tab shows the live markdown record. In `loom`, the same state is viewable via slash commands.
+5. Come back the next day -- opening the same directory resumes the plan from the notebook, in either consumer.
+
+## Architecture
+
+```
+Brain (Loom)                                  Shells
+────────────                                  ──────
+extensions/galaxy-analyst/                    bin/loom.js              terminal CLI
+  index.ts      extension entry               app/                      Orbit Electron shell
+  state.ts      plan + notebook state           src/main/               Node.js main process
+  tools.ts      34 LLM-callable tools           src/preload/            window.orbit bridge
+  context.ts    system prompt injection         src/renderer/           chat + artifact panes
+  ui-bridge.ts  plan mutations -> widgets         chat/                 streaming messages
+  profiles.ts   Galaxy server profiles            artifacts/            plan / steps / notebook
+                                              ProcMonitor               live subprocess stats
+~/.loom/config.json  shared brain config
+~/.orbit/            Orbit-specific state (window geometry, etc.)
+```
+
+## Current state
+
+Implemented and locally tested; live Galaxy end-to-end validation is still in progress.
 
 - TypeScript typecheck passes against `@mariozechner/pi-coding-agent` `0.55.0`
-- Local automated suite: `113` tests passing
+- Local automated suite: 122 tests passing
 - Notebook persistence, plan state, workflow metadata, BRC context, and extension registration are covered by tests
-- Provenance notebook sync now has a dedicated regression check via `npm run validate:provenance`
-- Live runtime validation has confirmed extension loading, Galaxy connection/history state bridging, and notebook rewriting for `data_set_source`
-- Remaining validation work: use a stronger tool-calling model for the live MCP path, then run Galaxy end-to-end with real histories, datasets, and jobs
+- Provenance notebook sync has a dedicated regression check via `npm run validate:provenance`
+- Runtime validation has confirmed extension loading, Galaxy connection/history state bridging, and notebook rewriting for `data_set_source`
+- Remaining validation: stronger tool-calling model on the live MCP path, then Galaxy end-to-end with real histories, datasets, and jobs
 
-If you are validating the runtime manually, use a `pi` CLI version that matches the SDK line used by this repo where possible.
+### What Orbit ships today
+
+- Dual-pane layout: streaming chat on the left, collapsible artifact pane on the right (auto-reveals on first plan, toggle with `Cmd/Ctrl+\`)
+- Plan tab with rendered markdown + raw edit modes and a parameter form for reviewing step arguments
+- Steps tab: React Flow + dagre DAG of the analysis plan with live status coloring
+- Notebook tab: the live `notebook.md` rendered as markdown (refresh with `/notebook`) plus typed result blocks from `report_result`
+- Chat: streaming, thinking indicator, tool cards, queue-while-streaming (`/btw`)
+- Process monitor strip: live CPU / memory / runtime for every subprocess the agent spawns
+- Cost / token header with pricing for Claude 4.5 & 4.6, GPT-4o, Gemini 2.5, and local providers
+- Local / Remote execution toggle in the masthead -- Remote registers the Galaxy MCP server, Local strips it entirely
+- Preferences dialog (`Cmd/Ctrl+,`): provider / model / API key, Galaxy credentials, default working directory
+- First-run welcome screen: one-page setup for LLM key, optional Galaxy profile, working directory
+- Galaxy brand dark theme with Inter + JetBrains Mono fonts bundled locally
+- Session continuity: `--continue` on restart (model switch, preference save, Local/Remote toggle) preserves chat history; `/new` starts a clean slate; first launch in a directory with an existing Pi session auto-resumes
+
+### What the Loom CLI ships today
+
+Everything brain-side works through the CLI. The display is a terminal UI instead of a React artifact pane; structured widget events collapse down to text summaries. Slash commands (`/plan`, `/status`, `/notebook`, `/plan-decisions`, `/connect`, `/profiles`) behave the same. You can use `loom` without ever launching Orbit.
 
 ## Install
 
+### Quick path -- CLI only
+
 ```bash
-npm install -g gxypi
+npm install -g loom
 ```
 
 Or run without installing:
 
 ```bash
-npx gxypi
+npx loom
 ```
 
-You'll also need [uv](https://docs.astral.sh/uv/) for the Galaxy MCP server (installed automatically via `uvx`). If you don't have it:
+You'll also need [uv](https://docs.astral.sh/uv/) for the Galaxy MCP server (invoked automatically via `uvx`):
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
+### Full install -- CLI + Orbit
+
+Clone the repo and install both workspaces:
+
+```bash
+git clone https://github.com/galaxyproject/pi-galaxy-analyst.git
+cd pi-galaxy-analyst
+npm install
+cd app && npm install
+```
+
+Launch Orbit:
+
+```bash
+npm start                              # from app/
+```
+
+Or use the CLI:
+
+```bash
+node bin/loom.js                      # from repo root
+```
+
+#### Linux (Ubuntu/Debian)
+
+```bash
+sudo apt update
+sudo apt install -y git curl build-essential
+
+# Node.js via nvm (if not already installed)
+curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+source ~/.bashrc
+nvm install --lts
+
+# uv (for galaxy-mcp)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Then the "Full install" steps above.
+
+#### macOS
+
+```bash
+# Homebrew, if not already installed
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+brew install node git uv
+```
+
+Then the "Full install" steps above.
+
+#### Windows (WSL2)
+
+Orbit runs on Windows inside WSL2. From an elevated PowerShell:
+
+```powershell
+wsl --install --web-download -d Ubuntu
+```
+
+Reboot, set up your Ubuntu user, then inside the Ubuntu terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/galaxyproject/pi-galaxy-analyst/main/scripts/setup-wsl.sh | bash
+source ~/.bashrc
+
+cd ~/pi-galaxy-analyst/app && npm start
+```
+
+Keep your analysis data inside `~/` (the Linux filesystem) -- `/mnt/c/` paths are significantly slower across the filesystem boundary.
+
+### After installation
+
+In Orbit, on first launch, the welcome screen asks for an LLM provider + key and (optionally) a Galaxy server. You need at least one of: [Anthropic](https://console.anthropic.com/), [OpenAI](https://platform.openai.com/), or [Google AI](https://aistudio.google.com/). Local providers like [Ollama](https://ollama.com/) and LiteLLM work too.
+
+In `loom`, the equivalent is editing `~/.loom/config.json` (see [Configuration](#configuration)) or running `loom --provider anthropic` and following the OAuth prompts.
+
 ## Usage
 
-### CLI-First
-
-The main supported ways to run gxypi without Electron are:
+### CLI (`loom`)
 
 ```bash
-gxypi
+loom
 ```
 
-```bash
-npx gxypi
 ```
-
-```bash
-node bin/gxypi.js --provider anthropic --model claude-sonnet-4-5-20250929
-```
-
-You can also load just the extension into Pi directly:
-
-```bash
-pi --no-extensions -e ./extensions/galaxy-analyst
-```
-
-If you are validating or debugging the terminal path, prefer these commands before using the desktop app.
-
-```
-$ gxypi
-
-You: I have RNA-seq data from a drug treatment experiment — 6 samples,
+You: I have RNA-seq data from a drug treatment experiment -- 6 samples,
      3 treated and 3 control HeLa cells. I want to find differentially
      expressed genes. The data is at GEO accession GSE164073.
 
@@ -87,23 +195,12 @@ Pi:  I'll help you set up a structured analysis. Let me start by refining
        5. ⬜ Differential Expression (DESeq2)
 
      Ready to start with QC?
-
-You: Yes, run FastQC on all samples.
-
-Pi:  Running FastQC via Galaxy...
-
-     ✅ FastQC complete. Results:
-     - All samples: Q30 > 88%
-     - Adapter content detected in samples 2 and 5
-     - Recommendation: proceed with trimming
-
-     I've logged this as a QC checkpoint. Move on to trimming?
 ```
 
-The next day, come back to the same directory and everything picks up where you left off:
+Come back the next day to the same directory and everything resumes:
 
 ```
-$ gxypi
+$ loom
 
 Pi:  Loaded notebook: RNA-seq Drug Treatment (1/5 steps completed)
 
@@ -113,9 +210,31 @@ Pi:  Loaded notebook: RNA-seq Drug Treatment (1/5 steps completed)
      Ready to continue?
 ```
 
-### Configuration
+You can also load just the extension into Pi directly:
 
-gxypi uses a single config file at `~/.gxypi/config.json` for both Galaxy credentials and LLM provider settings:
+```bash
+pi --no-extensions -e ./extensions/galaxy-analyst
+```
+
+If you're debugging the terminal path, prefer these commands before using Orbit.
+
+### Orbit (Electron shell)
+
+```bash
+cd app && npm start
+```
+
+The artifact pane starts collapsed; as soon as the agent creates a plan, it auto-reveals on the Plan tab. The Steps tab shows the React Flow DAG. The Notebook tab renders the live markdown notebook (refresh with `/notebook`). Tab activity dots highlight updates since you last viewed each tab.
+
+Keyboard shortcuts:
+- `Cmd/Ctrl+\` -- collapse / expand the artifact pane
+- `Cmd/Ctrl+,` -- open Preferences
+- `Cmd/Ctrl+O` -- switch working directory (does not restart the session; notifies the agent instead)
+- `Esc` -- dismiss modal prompts
+
+## Configuration
+
+Loom uses a single brain-level config at `~/.loom/config.json`. Every consumer (the `loom` CLI, Orbit, any future shell) reads and writes it:
 
 ```json
 {
@@ -132,13 +251,17 @@ gxypi uses a single config file at `~/.gxypi/config.json` for both Galaxy creden
         "apiKey": "abc123"
       }
     }
-  }
+  },
+  "executionMode": "remote",
+  "defaultCwd": "~/analyses"
 }
 ```
 
-Both sections are optional. If `llm` is missing, gxypi falls back to environment variables or OAuth login. If `galaxy` is missing, use `/connect` to add a server interactively — credentials are saved to the config file automatically.
+All sections are optional. If `llm` is missing, consumers fall back to environment variables or OAuth login. If `galaxy` is missing, use `/connect` to add a server interactively -- credentials save to the config automatically. `executionMode` is `"remote"` by default (registers Galaxy MCP, Galaxy UDTs are the primary execution path); `"local"` strips Galaxy MCP for exploratory work.
 
-You can also set environment variables directly:
+Orbit-specific state (window geometry, pane preferences) lives in `~/.orbit/` so multiple shells can coexist without stepping on each other.
+
+Environment variable overrides:
 
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."
@@ -146,53 +269,11 @@ export GALAXY_URL="https://usegalaxy.org"
 export GALAXY_API_KEY="your-api-key"
 ```
 
-If you have an existing setup with `~/.pi/agent/galaxy-profiles.json` or `~/.pi/agent/models.json`, gxypi migrates them into `~/.gxypi/config.json` on first run.
+If you have an existing setup with `~/.gxypi/config.json` (from earlier CLI versions) or with `~/.pi/agent/galaxy-profiles.json` / `~/.pi/agent/models.json`, the CLI migrates them into `~/.loom/config.json` on first run. The old files stay in place; nothing is deleted.
 
-### Commands
+### Local LLMs
 
-| Command | What it does |
-|---------|-------------|
-| `/status` | Galaxy connection state, current plan progress |
-| `/plan` | View analysis plan with step status |
-| `/plan-decisions` | View the decision log |
-| `/notebook` | Notebook info or list available notebooks |
-| `/connect` | Connect to a Galaxy server (prompts for credentials) |
-| `/profiles` | List saved Galaxy server profiles |
-
-## How It Works
-
-gxypi guides analyses through five phases:
-
-**1. Problem Definition** — Refine your research question using the PICO framework, add literature references.
-
-**2. Data Acquisition** — Track data sources (GEO, SRA, local files), register samples, generate samplesheets, link to Galaxy datasets.
-
-**3. Analysis** — Create a step-by-step plan, execute tools/workflows via Galaxy, log every decision, record QC checkpoints with pass/fail criteria.
-
-**4. Interpretation** — Review results in biological context, pathway analysis.
-
-**5. Publication** — Generate methods sections from the tool versions actually used, track figures, prepare data sharing.
-
-Everything is saved to a **notebook file** — a readable markdown document with YAML blocks for structured data. You can open it in any editor, share it with collaborators, or use it to reproduce the analysis later.
-
-### Git-tracked notebooks
-
-When gxypi creates a notebook, it initializes a git repository in the working directory (if one doesn't already exist) and commits every meaningful change as it happens. Step completions, QC checkpoints, decisions, phase transitions — each gets its own commit with a descriptive message like `Add step: Read Mapping` or `QC: Post-alignment QC (passed)`.
-
-This gives you a few things for free:
-
-- **Full undo history.** If an analysis step goes sideways, `git log` shows exactly what changed and when. You can diff any two points in the analysis or revert a bad step.
-- **Reproducibility evidence.** The commit history is a timestamped, immutable record of every decision and result. Reviewers and collaborators can see not just the final notebook but the entire sequence of how you got there.
-- **Branch-based exploration.** Want to try an alternative DE threshold or a different aligner? Branch, run the variant, and compare notebooks side by side with `git diff`.
-- **Collaboration.** Push the repo to GitHub and collaborators can pull, review the analysis history, and continue where you left off.
-
-The `.gitignore` auto-created with the repo excludes large bioinformatics files (FASTQ, BAM, VCF, etc.) so only the notebook markdown and any small analysis artifacts get tracked.
-
-Granular changes like Galaxy dataset references and literature additions are bundled into the next structural commit rather than creating their own, keeping the history clean.
-
-## Using Local LLMs
-
-Pi supports any OpenAI-compatible API. To use a local provider like [LiteLLM](https://litellm.ai/), set it in `~/.gxypi/config.json`:
+Pi supports any OpenAI-compatible API. For [LiteLLM](https://litellm.ai/), [Ollama](https://ollama.com/), or other local backends:
 
 ```json
 {
@@ -204,34 +285,29 @@ Pi supports any OpenAI-compatible API. To use a local provider like [LiteLLM](ht
 }
 ```
 
-You'll also need a `~/.pi/agent/models.json` to tell Pi the model's capabilities (context window, token limits, etc.) — see the Pi documentation for the format. The config file handles provider selection and API keys; `models.json` handles the model metadata that Pi needs for request sizing.
+You'll also need `~/.pi/agent/models.json` for model capability metadata (context window, token limits) -- see Pi's documentation. The Loom config handles provider selection and API keys; `models.json` handles model metadata Pi needs for request sizing.
 
-Alternatively, pass flags directly: `gxypi --provider litellm --model your-model-name`.
+Or pass flags directly: `loom --provider litellm --model your-model-name`.
 
-## Terminal-Only Validation
+## Commands
 
-For non-Electron validation, use the CLI/runtime path directly:
+### Slash commands
 
-```bash
-npm run typecheck
-npm test
-npm run validate:provenance
-pi --no-extensions -e ./extensions/galaxy-analyst
-```
+| Command | What it does |
+|---------|-------------|
+| `/plan` | Show the current analysis plan |
+| `/plan-decisions` | Show the decision log |
+| `/notebook` | Show the live notebook content (or list notebooks in cwd) |
+| `/status` | Galaxy connection + plan progress summary |
+| `/connect [name]` | Connect to Galaxy (prompts for credentials, or switches profile) |
+| `/profiles` | List saved Galaxy server profiles |
+| `/new` | Start a fresh session (Orbit only) |
 
-Then validate the wrapper itself in a plain working directory:
+In Orbit, plan-related slash commands are active in the plan editor: `/review`, `/test`, `/execute`, `/run`.
 
-```bash
-mkdir -p /tmp/gxypi-cli-validation
-cd /tmp/gxypi-cli-validation
-node /Users/dannon/work/pi-galaxy-analyst/bin/gxypi.js --provider litellm --model gpt-oss-120b
-```
+## Tool reference
 
-For a full terminal-only runbook, see [docs/terminal-validation.md](/Users/dannon/work/pi-galaxy-analyst/docs/terminal-validation.md).
-
-## Tool Reference
-
-gxypi currently registers `34` extension tools across the analysis lifecycle:
+Loom registers 34 brain-level tools across the five-phase lifecycle:
 
 | Category | Tools |
 |----------|-------|
@@ -245,14 +321,74 @@ gxypi currently registers `34` extension tools across the analysis lifecycle:
 | **Workflow integration** | `workflow_to_plan`, `workflow_invocation_link`, `workflow_invocation_check` |
 | **BRC context** | `brc_set_context` |
 | **GTN tutorials** | `gtn_search`, `gtn_fetch` |
+| **Shell-facing** | `report_result`, `analyze_plan_parameters` |
 
-For a step-by-step live validation runbook, see [docs/live-validation-checklist.md](/Users/dannon/work/pi-galaxy-analyst/docs/live-validation-checklist.md). For the provenance notebook regression specifically, run `npm run validate:provenance`.
+## Five-phase lifecycle
 
-## Related Projects
+Loom guides analyses through five phases. You can move between them freely -- the phases shape the agent's defaults without locking you in.
 
-- [Galaxy](https://galaxyproject.org) — Open-source platform for data-intensive biomedical research
-- [galaxy-mcp](https://github.com/galaxyproject/galaxy-mcp) — MCP server for the Galaxy API
-- [Pi coding agent](https://github.com/badlogic/pi-mono) — The Pi.dev agent framework
+1. **Problem Definition** -- refine the research question (PICO framework), add literature references.
+2. **Data Acquisition** -- track data sources (GEO, SRA, local), register samples, generate samplesheets, link to Galaxy datasets.
+3. **Analysis** -- create a step-by-step plan, execute tools / workflows via Galaxy, log every decision, record QC checkpoints with pass/fail criteria.
+4. **Interpretation** -- review results in biological context, run pathway analysis.
+5. **Publication** -- generate methods sections from the tool versions actually used, track figures, prepare data sharing.
+
+Everything persists to a **notebook file** -- a readable markdown document with YAML blocks for structured data. Open it in any editor, share it with collaborators, or use it to reproduce the analysis later.
+
+### Git-tracked notebooks
+
+When Loom creates a notebook it initializes a git repo in the working directory (if one doesn't already exist) and commits every meaningful change as it happens. Step completions, QC checkpoints, decisions, phase transitions -- each gets its own commit with a descriptive message like `Add step: Read Mapping` or `QC: Post-alignment QC (passed)`.
+
+This gives you:
+
+- **Full undo history.** `git log` shows exactly what changed and when. Diff any two points; revert a bad step.
+- **Reproducibility evidence.** The commit history is a timestamped, immutable record of every decision and result.
+- **Branch-based exploration.** Try an alternative DE threshold or a different aligner on a branch, compare notebooks side by side with `git diff`.
+- **Collaboration.** Push the repo to GitHub and collaborators can pull, review the analysis history, and continue.
+
+The auto-created `.gitignore` excludes large bioinformatics files (FASTQ, BAM, VCF, etc.) so only the notebook markdown and small artifacts get tracked. Granular changes like Galaxy dataset references and literature additions bundle into the next structural commit rather than creating their own, keeping the history clean.
+
+## Tech stack
+
+| Component | Technology |
+|---|---|
+| Agent | Pi.dev (`@mariozechner/pi-coding-agent`) |
+| MCP bridge | `pi-mcp-adapter`, `uvx galaxy-mcp` |
+| Language | TypeScript (strict) |
+| Tests | Vitest |
+| Desktop | Electron 35 |
+| Build | Vite + electron-forge |
+| Markdown | `marked` |
+| DAG | React Flow + dagre |
+| Fonts | Inter (body), JetBrains Mono (code) |
+| Theme | Galaxy brand dark (`#2c3143` + gold accent `#ffd700`) |
+
+## Terminal-only validation
+
+For non-Electron validation:
+
+```bash
+npm run typecheck
+npm test
+npm run validate:provenance
+pi --no-extensions -e ./extensions/galaxy-analyst
+```
+
+Then validate the wrapper in a plain working directory:
+
+```bash
+mkdir -p /tmp/loom-cli-validation
+cd /tmp/loom-cli-validation
+node /path/to/pi-galaxy-analyst/bin/loom.js --provider litellm --model gpt-oss-120b
+```
+
+For a full terminal-only runbook, see [docs/terminal-validation.md](docs/terminal-validation.md). For the provenance notebook regression, see [docs/live-validation-checklist.md](docs/live-validation-checklist.md).
+
+## Related projects
+
+- [Galaxy](https://galaxyproject.org) -- open-source platform for data-intensive biomedical research
+- [galaxy-mcp](https://github.com/galaxyproject/galaxy-mcp) -- MCP server for the Galaxy API
+- [Pi coding agent](https://github.com/badlogic/pi-mono) -- the Pi.dev agent framework
 
 ## License
 

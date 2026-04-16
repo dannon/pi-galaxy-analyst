@@ -1,6 +1,6 @@
 # Terminal Validation
 
-This runbook keeps gxypi validation focused on the non-Electron product path.
+This runbook keeps loom validation focused on the non-Electron product path.
 
 ## Goal
 
@@ -43,24 +43,24 @@ Check:
 - `/notebook`
 - `/profiles`
 
-This isolates extension behavior from the gxypi wrapper.
+This isolates extension behavior from the loom wrapper.
 
 ## 3. Wrapper Check
 
 Use a clean working directory:
 
 ```bash
-mkdir -p /tmp/gxypi-cli-validation
-cd /tmp/gxypi-cli-validation
-node /Users/dannon/work/pi-galaxy-analyst/bin/gxypi.js --provider litellm --model gpt-oss-120b
+mkdir -p /tmp/loom-cli-validation
+cd /tmp/loom-cli-validation
+node /Users/dannon/work/pi-galaxy-analyst/bin/loom.js --provider litellm --model gpt-oss-120b
 ```
 
 Notes:
 
-- `gxypi` writes Galaxy MCP configuration into `~/.pi/agent/mcp.json` during startup
+- `loom` writes Galaxy MCP configuration into `~/.pi/agent/mcp.json` during startup
 - use the wrapper path when you want to validate the real end-user terminal experience
 - informational wrapper commands are side-effect free:
-  `gxypi --help`, `gxypi --version`, and `gxypi --list-models` should not rewrite MCP config
+  `loom --help`, `loom --version`, and `loom --list-models` should not rewrite MCP config
 
 Check:
 
@@ -75,7 +75,7 @@ In the same directory:
 1. Ask for a simple analysis plan
 2. Confirm a notebook file is created
 3. Exit
-4. Restart `gxypi` in the same directory
+4. Restart `loom` in the same directory
 
 Expected:
 

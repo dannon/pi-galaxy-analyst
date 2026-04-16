@@ -1,212 +1,182 @@
-import { renderMarkdown } from "./message.js";
+import { marked } from "marked";
 
 export class ChatPanel {
-  private messagesEl: HTMLElement;
-  private inputEl: HTMLTextAreaElement;
-  private sendBtn: HTMLButtonElement;
-  private currentAssistant: HTMLElement | null = null;
-  private currentBody: HTMLElement | null = null;
+  private container: HTMLElement;
+  private currentMessage: HTMLElement | null = null;
   private currentText = "";
-  private autoScroll = true;
   private toolCards = new Map<string, HTMLElement>();
+  private scrollLocked = true;
+  private thinkingEl: HTMLElement | null = null;
 
-  onSubmit: ((text: string) => void) | null = null;
-  onAbort: (() => void) | null = null;
+  constructor(container: HTMLElement) {
+    this.container = container;
 
-  constructor(
-    messagesEl: HTMLElement,
-    inputEl: HTMLTextAreaElement,
-    sendBtn: HTMLButtonElement
-  ) {
-    this.messagesEl = messagesEl;
-    this.inputEl = inputEl;
-    this.sendBtn = sendBtn;
-
-    this.inputEl.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        this.submit();
-      }
+    this.container.addEventListener("scroll", () => {
+      const { scrollTop, scrollHeight, clientHeight } = this.container;
+      this.scrollLocked = scrollHeight - scrollTop - clientHeight < 40;
     });
-
-    this.sendBtn.addEventListener("click", () => this.submit());
-
-    // Auto-resize textarea
-    this.inputEl.addEventListener("input", () => {
-      this.inputEl.style.height = "auto";
-      this.inputEl.style.height =
-        Math.min(this.inputEl.scrollHeight, 120) + "px";
-    });
-
-    // Scroll-lock detection
-    this.messagesEl.addEventListener("scroll", () => {
-      const el = this.messagesEl;
-      this.autoScroll =
-        el.scrollTop + el.clientHeight >= el.scrollHeight - 40;
-    });
-  }
-
-  private submit(): void {
-    const text = this.inputEl.value.trim();
-    if (!text) return;
-    this.inputEl.value = "";
-    this.inputEl.style.height = "auto";
-    this.onSubmit?.(text);
-  }
-
-  private scrollToBottom(): void {
-    if (this.autoScroll) {
-      this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
-    }
   }
 
   addUserMessage(text: string): void {
-    const msg = document.createElement("div");
-    msg.className = "message user";
-
-    const header = document.createElement("div");
-    header.className = "message-header";
-    header.textContent = "You";
-
-    const body = document.createElement("div");
-    body.className = "message-body";
-    body.textContent = text;
-
-    msg.appendChild(header);
-    msg.appendChild(body);
-    this.messagesEl.appendChild(msg);
+    const el = document.createElement("div");
+    el.className = "message user";
+    el.textContent = text;
+    this.container.appendChild(el);
     this.scrollToBottom();
+  }
+
+  /** Wipe all chat messages and reset internal state. */
+  clear(): void {
+    this.container.innerHTML = "";
+    this.currentMessage = null;
+    this.currentText = "";
+    this.toolCards.clear();
+    this.thinkingEl = null;
+  }
+
+  showThinking(): void {
+    this.hideThinking();
+    const el = document.createElement("div");
+    el.className = "message assistant thinking-indicator";
+    el.innerHTML = '<span class="thinking-dots"><span>.</span><span>.</span><span>.</span></span> thinking';
+    this.thinkingEl = el;
+    this.container.appendChild(el);
+    this.scrollToBottom();
+  }
+
+  hideThinking(): void {
+    if (this.thinkingEl) {
+      this.thinkingEl.remove();
+      this.thinkingEl = null;
+    }
+  }
+
+  hasActiveMessage(): boolean {
+    return this.currentMessage !== null;
   }
 
   startAssistantMessage(): void {
     this.currentText = "";
-    this.toolCards.clear();
-
-    const msg = document.createElement("div");
-    msg.className = "message assistant";
-
-    const header = document.createElement("div");
-    header.className = "message-header";
-    header.textContent = "gxypi";
-
-    const body = document.createElement("div");
-    body.className = "message-body";
-
-    // Add streaming cursor
-    const cursor = document.createElement("span");
-    cursor.className = "streaming-cursor";
-    body.appendChild(cursor);
-
-    msg.appendChild(header);
-    msg.appendChild(body);
-    this.messagesEl.appendChild(msg);
-
-    this.currentAssistant = msg;
-    this.currentBody = body;
+    const el = document.createElement("div");
+    el.className = "message assistant";
+    el.innerHTML = '<span class="cursor-blink"></span>';
+    this.container.appendChild(el);
+    this.currentMessage = el;
     this.scrollToBottom();
   }
 
   appendDelta(delta: string): void {
-    if (!this.currentBody) return;
+    if (!this.currentMessage) return;
     this.currentText += delta;
-
-    // Re-render markdown with cursor
-    this.currentBody.innerHTML = renderMarkdown(this.currentText);
-    const cursor = document.createElement("span");
-    cursor.className = "streaming-cursor";
-    this.currentBody.appendChild(cursor);
-
+    this.renderCurrentMessage();
     this.scrollToBottom();
   }
 
   finishAssistantMessage(): void {
-    if (this.currentBody && this.currentText) {
-      this.currentBody.innerHTML = renderMarkdown(this.currentText);
+    if (this.currentMessage) {
+      this.renderCurrentMessage();
     }
-    this.currentAssistant = null;
-    this.currentBody = null;
+    // Clean up any stray cursors across the whole container
+    this.container.querySelectorAll(".cursor-blink").forEach(c => c.remove());
+    this.currentMessage = null;
     this.currentText = "";
-    this.scrollToBottom();
   }
 
-  addToolCard(toolName: string, status: "running" | "done" | "error"): void {
-    if (!this.currentAssistant) return;
-
+  addToolCard(id: string, name: string): void {
     const card = document.createElement("div");
     card.className = "tool-card";
+    card.innerHTML = `
+      <div class="tool-card-header">
+        <span class="tool-status running"></span>
+        <span>${escapeHtml(name)}</span>
+      </div>
+      <div class="tool-card-body"></div>
+    `;
 
-    const header = document.createElement("div");
-    header.className = "tool-header";
-
-    const icon = document.createElement("span");
-    icon.className = "tool-icon";
-    icon.textContent = "⚙";
-
-    const name = document.createElement("span");
-    name.className = "tool-name";
-    name.textContent = toolName.replace(/^galaxy_/, "").replace(/_/g, " ");
-
-    const statusEl = document.createElement("span");
-    statusEl.className = `tool-status ${status}`;
-    statusEl.textContent = status === "running" ? "running..." : status;
-
-    header.appendChild(icon);
-    header.appendChild(name);
-    header.appendChild(statusEl);
-
-    const body = document.createElement("div");
-    body.className = "tool-body";
-
-    header.addEventListener("click", () => {
+    card.querySelector(".tool-card-header")!.addEventListener("click", () => {
       card.classList.toggle("expanded");
     });
 
-    card.appendChild(header);
-    card.appendChild(body);
+    this.toolCards.set(id, card);
 
-    // Insert before the message body (text), or append to message
-    const bodyEl = this.currentAssistant.querySelector(".message-body");
-    if (bodyEl) {
-      this.currentAssistant.insertBefore(card, bodyEl);
+    // Insert into current assistant message or append to container
+    if (this.currentMessage) {
+      // Insert before the cursor
+      const cursor = this.currentMessage.querySelector(".cursor-blink");
+      if (cursor) {
+        this.currentMessage.insertBefore(card, cursor);
+      } else {
+        this.currentMessage.appendChild(card);
+      }
     } else {
-      this.currentAssistant.appendChild(card);
+      this.container.appendChild(card);
     }
 
-    this.toolCards.set(toolName, card);
     this.scrollToBottom();
   }
 
-  updateToolCard(
-    toolName: string,
-    status: "done" | "error",
-    result?: string
-  ): void {
-    const card = this.toolCards.get(toolName);
+  updateToolCard(id: string, status: "done" | "error", result?: string): void {
+    const card = this.toolCards.get(id);
     if (!card) return;
 
-    const statusEl = card.querySelector(".tool-status");
-    if (statusEl) {
-      statusEl.className = `tool-status ${status}`;
-      statusEl.textContent = status;
-    }
+    const dot = card.querySelector(".tool-status")!;
+    dot.className = `tool-status ${status}`;
 
     if (result) {
-      const body = card.querySelector(".tool-body");
-      if (body) {
-        const text =
-          typeof result === "string" ? result : JSON.stringify(result, null, 2);
-        body.textContent = text.slice(0, 500);
+      const body = card.querySelector(".tool-card-body")!;
+      body.textContent = result.slice(0, 2000);
+    }
+  }
+
+  addErrorMessage(text: string): void {
+    const el = document.createElement("div");
+    el.className = "message assistant";
+    el.style.color = "var(--error)";
+    el.textContent = text;
+    this.container.appendChild(el);
+    this.scrollToBottom();
+  }
+
+  /** Add a system/info message with neutral styling and HTML support. */
+  addInfoMessage(html: string): void {
+    const el = document.createElement("div");
+    el.className = "message assistant system-info";
+    el.innerHTML = html;
+    this.container.appendChild(el);
+    this.scrollToBottom();
+  }
+
+  private renderCurrentMessage(): void {
+    if (!this.currentMessage) return;
+
+    // Preserve tool cards
+    const cards = Array.from(this.currentMessage.querySelectorAll(".tool-card"));
+
+    const html = marked.parse(this.currentText, { async: false }) as string;
+    this.currentMessage.innerHTML = html + '<span class="cursor-blink"></span>';
+
+    // Re-insert tool cards before the cursor
+    const cursor = this.currentMessage.querySelector(".cursor-blink");
+    for (const card of cards) {
+      if (cursor) {
+        this.currentMessage.insertBefore(card, cursor);
+      } else {
+        this.currentMessage.appendChild(card);
       }
     }
   }
 
-  // Used by inline confirm cards
-  appendElement(el: HTMLElement): void {
-    if (this.currentAssistant) {
-      this.currentAssistant.appendChild(el);
-    } else {
-      this.messagesEl.appendChild(el);
+  private scrollToBottom(): void {
+    if (this.scrollLocked) {
+      requestAnimationFrame(() => {
+        this.container.scrollTop = this.container.scrollHeight;
+      });
     }
-    this.scrollToBottom();
   }
+}
+
+function escapeHtml(text: string): string {
+  const el = document.createElement("span");
+  el.textContent = text;
+  return el.innerHTML;
 }

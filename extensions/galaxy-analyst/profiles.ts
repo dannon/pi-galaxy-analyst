@@ -1,7 +1,7 @@
 /**
  * Galaxy server profile management
  *
- * Stores named profiles in the `galaxy` section of ~/.gxypi/config.json.
+ * Stores named profiles in the `galaxy` section of ~/.loom/config.json.
  * Each profile holds a URL + API key. The active profile's credentials
  * are synced to mcp.json's env block so the Galaxy MCP server sees them.
  */

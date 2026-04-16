@@ -1,6 +1,6 @@
 # Live Validation Checklist
 
-This checklist is the current manual validation path for `gxypi`. It is ordered from lowest-risk runtime checks to a minimal real Galaxy workflow.
+This checklist is the current manual validation path for `loom`. It is ordered from lowest-risk runtime checks to a minimal real Galaxy workflow.
 
 ## Preconditions
 
@@ -58,7 +58,7 @@ Inside Pi:
 
 1. Run `/connect`
 2. Enter a Galaxy URL and API key
-3. Ask the agent: `Create a new Galaxy history called "gxypi validation test"`
+3. Ask the agent: `Create a new Galaxy history called "loom validation test"`
 4. Run `/status`
 
 Expected:
@@ -81,8 +81,8 @@ Current known-good result:
 In an empty test directory:
 
 ```bash
-mkdir -p /tmp/gxypi-validation
-cd /tmp/gxypi-validation
+mkdir -p /tmp/loom-validation
+cd /tmp/loom-validation
 pi --no-extensions -e /Users/dannon/work/pi-galaxy-analyst/extensions/galaxy-analyst
 ```
 
@@ -102,7 +102,7 @@ Expected:
 Then exit and restart in the same directory:
 
 ```bash
-cd /tmp/gxypi-validation
+cd /tmp/loom-validation
 pi --no-extensions -e /Users/dannon/work/pi-galaxy-analyst/extensions/galaxy-analyst
 ```
 

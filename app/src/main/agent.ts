@@ -1,10 +1,12 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import path from "node:path";
+import fs from "node:fs";
+import os from "node:os";
 import type { BrowserWindow } from "electron";
 
-// Resolve the gxypi entry point relative to the app
-const GXYPI_BIN = path.resolve(__dirname, "../../../bin/gxypi.js");
+// Resolve the loom entry point relative to the app
+const LOOM_BIN = path.resolve(__dirname, "../../../bin/loom.js");
 
 export type AgentStatus = "running" | "stopped" | "error";
 
@@ -25,13 +27,25 @@ export class AgentManager {
   private pendingResponses = new Map<string, PendingResponse>();
   private idCounter = 0;
   private cwd: string;
+  private hasStartedBefore = false;  // → use --continue on restart to preserve chat history
+  private nextStartIsFresh = false;  // → tells extension to skip notebook auto-load on next start
 
   constructor(window: BrowserWindow, cwd: string) {
     this.window = window;
     this.cwd = cwd;
   }
 
+  /** Reset session continuity (e.g. when switching to a new analysis directory). */
+  resetSession(): void {
+    this.hasStartedBefore = false;
+    this.nextStartIsFresh = true;
+  }
+
   setCwd(cwd: string): void {
+    if (cwd !== this.cwd) {
+      // New analysis directory → fresh session, no --continue
+      this.hasStartedBefore = false;
+    }
     this.cwd = cwd;
     log("cwd set to", cwd);
   }
@@ -40,18 +54,53 @@ export class AgentManager {
     return this.cwd;
   }
 
+  getPid(): number | null {
+    return this.process?.pid ?? null;
+  }
+
+  /**
+   * Check if Pi.dev has any saved sessions for the current cwd.
+   * Pi stores sessions in ~/.pi/agent/sessions/<encoded-cwd>/ as .jsonl files.
+   * Used on first launch to decide whether to pass --continue for a soft resume.
+   */
+  private hasExistingSession(): boolean {
+    try {
+      const encoded = `--${this.cwd.replace(/\//g, "-")}--`;
+      const sessionsDir = path.join(os.homedir(), ".pi", "agent", "sessions", encoded);
+      if (!fs.existsSync(sessionsDir)) return false;
+      const files = fs.readdirSync(sessionsDir).filter(f => f.endsWith(".jsonl"));
+      return files.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
   start(): void {
     if (this.process) this.stop();
-
     this.stderr = "";
 
-    log("starting agent", { bin: GXYPI_BIN, cwd: this.cwd });
+    // Pass --continue to resume the previous session and preserve chat history:
+    // - Always on restart within the same app run (model switch, prefs save)
+    // - On first launch (!hasStartedBefore), only if a Pi session exists for this cwd
+    // Fresh /new sessions bypass this (nextStartIsFresh → no --continue).
+    const wantsContinue =
+      !this.nextStartIsFresh &&
+      (this.hasStartedBefore || this.hasExistingSession());
+    const args = [LOOM_BIN, "--mode", "rpc"];
+    if (wantsContinue) {
+      args.push("--continue");
+    }
+    this.hasStartedBefore = true;
+
+    const fresh = this.nextStartIsFresh;
+    this.nextStartIsFresh = false;
+    log("starting agent", { bin: LOOM_BIN, cwd: this.cwd, continue: args.includes("--continue"), fresh });
 
     try {
-      this.process = spawn("node", [GXYPI_BIN, "--mode", "rpc"], {
+      this.process = spawn("node", args, {
         stdio: ["pipe", "pipe", "pipe"],
         cwd: this.cwd,
-        env: { ...process.env },
+        env: { ...process.env, ...(fresh ? { LOOM_FRESH_SESSION: "1" } : {}) },
       });
     } catch (err) {
       log("spawn failed:", err);
@@ -75,29 +124,42 @@ export class AgentManager {
       log("stderr:", text.trimEnd());
     });
 
-    this.process.on("exit", (code, signal) => {
-      log("agent exited, code:", code, "signal:", signal);
-      if (this.stderr) {
-        log("accumulated stderr:\n" + this.stderr);
-      }
-      this.process = null;
-      if (code !== 0 && code !== null) {
-        this.setStatus("error", `Agent exited with code ${code}`);
+    // Capture the spawned process so the exit handler doesn't clobber a newer one
+    // (race: stop() spawns a new process, then the OLD process's exit fires later
+    // and wipes this.process to null even though the new one is alive).
+    const spawnedProcess = this.process;
+
+    spawnedProcess.on("exit", (code, signal) => {
+      log("agent exited, code:", code, "signal:", signal, "pid:", spawnedProcess.pid);
+      if (this.process === spawnedProcess) {
+        this.process = null;
+        if (code !== 0 && code !== null) {
+          this.setStatus("error", `Agent exited with code ${code}`);
+        } else {
+          this.setStatus("stopped");
+        }
       } else {
-        this.setStatus("stopped");
+        log("(stale exit — newer agent already running, ignoring)");
       }
     });
 
-    this.process.on("error", (err) => {
-      log("agent process error:", err.message);
-      this.process = null;
-      this.setStatus("error", err.message);
+    spawnedProcess.on("error", (err) => {
+      log("agent process error:", err.message, "pid:", spawnedProcess.pid);
+      if (this.process === spawnedProcess) {
+        this.process = null;
+        this.setStatus("error", err.message);
+      }
     });
   }
 
   stop(): void {
     if (this.process) {
       log("stopping agent, pid:", this.process.pid);
+      // Detach all listeners so any delayed exit/error events from THIS process
+      // can't fire after start() spawns a replacement.
+      this.process.removeAllListeners();
+      this.process.stdout?.removeAllListeners();
+      this.process.stderr?.removeAllListeners();
       this.process.kill("SIGTERM");
       this.process = null;
     }
@@ -157,7 +219,6 @@ export class AgentManager {
     const type = data.type as string;
     log("← event:", type, type === "message_update" ? "" : JSON.stringify(data).slice(0, 150));
 
-    // Route responses to pending promises
     if (type === "response" && data.id) {
       const pending = this.pendingResponses.get(data.id as string);
       if (pending) {
@@ -171,14 +232,12 @@ export class AgentManager {
       }
     }
 
-    // Route extension UI requests
     if (type === "extension_ui_request") {
       log("  ui request:", (data as { method?: string }).method, (data as { id?: string }).id);
       this.window.webContents.send("agent:ui-request", data);
       return;
     }
 
-    // Everything else is an agent event
     this.window.webContents.send("agent:event", data);
   }
 }

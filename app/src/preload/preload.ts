@@ -5,50 +5,57 @@ export interface AgentEvent {
   [key: string]: unknown;
 }
 
-export interface ExtensionUIRequest {
+export interface UiRequest {
   type: "extension_ui_request";
   id: string;
   method: string;
-  title?: string;
-  options?: string[];
-  message?: string;
-  placeholder?: string;
-  prefill?: string;
-  notifyType?: "info" | "warning" | "error";
-  statusKey?: string;
-  statusText?: string;
-  widgetKey?: string;
-  widgetLines?: string[];
-  text?: string;
+  [key: string]: unknown;
 }
 
-export interface GxypiAPI {
+export interface ProcInfo {
+  pid: number;
+  ppid: number;
+  pcpu: number;
+  pmem: number;
+  rss: number;
+  etime: string;
+  nlwp: number;
+  command: string;
+}
+
+export interface OrbitAPI {
   prompt(message: string): Promise<void>;
-  steer(message: string): Promise<void>;
   abort(): Promise<void>;
   newSession(): Promise<{ cancelled: boolean }>;
   getState(): Promise<unknown>;
-  getCommands(): Promise<unknown>;
+  getCwd(): Promise<string>;
+  openFile(filePath: string): Promise<{ opened: boolean; error?: string }>;
+  getConfig(): Promise<Record<string, unknown>>;
+  saveConfig(config: Record<string, unknown>): Promise<{ success: boolean; error?: string }>;
   respondToUiRequest(id: string, response: Record<string, unknown>): void;
-  loadConfig(): Promise<unknown>;
-  saveConfig(config: unknown): Promise<void>;
   restartAgent(): Promise<void>;
+  resetSession(): Promise<void>;
   selectDirectory(): Promise<string | null>;
+  browseDirectory(): Promise<string | null>;
   onAgentEvent(callback: (event: AgentEvent) => void): () => void;
-  onUiRequest(callback: (request: ExtensionUIRequest) => void): () => void;
+  onUiRequest(callback: (request: UiRequest) => void): () => void;
   onAgentStatus(
     callback: (status: "running" | "stopped" | "error", msg?: string) => void
   ): () => void;
-  onToggleSidebar(callback: () => void): () => void;
+  onCwdChanged(callback: (dir: string) => void): () => void;
+  onOpenPreferences(callback: () => void): () => void;
+  onProcUpdate(callback: (procs: ProcInfo[]) => void): () => void;
 }
 
-const api: GxypiAPI = {
+const api: OrbitAPI = {
   prompt: (message) => ipcRenderer.invoke("agent:prompt", message),
-  steer: (message) => ipcRenderer.invoke("agent:steer", message),
   abort: () => ipcRenderer.invoke("agent:abort"),
   newSession: () => ipcRenderer.invoke("agent:new-session"),
   getState: () => ipcRenderer.invoke("agent:get-state"),
-  getCommands: () => ipcRenderer.invoke("agent:get-commands"),
+  getCwd: () => ipcRenderer.invoke("agent:get-cwd"),
+  openFile: (filePath) => ipcRenderer.invoke("file:open", filePath),
+  getConfig: () => ipcRenderer.invoke("config:get"),
+  saveConfig: (config) => ipcRenderer.invoke("config:save", config),
 
   respondToUiRequest: (id, response) => {
     ipcRenderer.send("agent:ui-response", {
@@ -58,10 +65,10 @@ const api: GxypiAPI = {
     });
   },
 
-  loadConfig: () => ipcRenderer.invoke("config:load"),
-  saveConfig: (config) => ipcRenderer.invoke("config:save", config),
   restartAgent: () => ipcRenderer.invoke("agent:restart"),
+  resetSession: () => ipcRenderer.invoke("agent:reset-session"),
   selectDirectory: () => ipcRenderer.invoke("dialog:select-directory"),
+  browseDirectory: () => ipcRenderer.invoke("dialog:browse-directory"),
 
   onAgentEvent: (callback) => {
     const handler = (_e: unknown, event: AgentEvent) => callback(event);
@@ -70,8 +77,7 @@ const api: GxypiAPI = {
   },
 
   onUiRequest: (callback) => {
-    const handler = (_e: unknown, request: ExtensionUIRequest) =>
-      callback(request);
+    const handler = (_e: unknown, request: UiRequest) => callback(request);
     ipcRenderer.on("agent:ui-request", handler);
     return () => ipcRenderer.removeListener("agent:ui-request", handler);
   },
@@ -86,12 +92,23 @@ const api: GxypiAPI = {
     return () => ipcRenderer.removeListener("agent:status", handler);
   },
 
-  onToggleSidebar: (callback) => {
+  onCwdChanged: (callback) => {
+    const handler = (_e: unknown, dir: string) => callback(dir);
+    ipcRenderer.on("agent:cwd-changed", handler);
+    return () => ipcRenderer.removeListener("agent:cwd-changed", handler);
+  },
+
+  onOpenPreferences: (callback) => {
     const handler = () => callback();
-    ipcRenderer.on("view:toggle-sidebar", handler);
-    return () =>
-      ipcRenderer.removeListener("view:toggle-sidebar", handler);
+    ipcRenderer.on("menu:open-preferences", handler);
+    return () => ipcRenderer.removeListener("menu:open-preferences", handler);
+  },
+
+  onProcUpdate: (callback) => {
+    const handler = (_e: unknown, procs: ProcInfo[]) => callback(procs);
+    ipcRenderer.on("proc:update", handler);
+    return () => ipcRenderer.removeListener("proc:update", handler);
   },
 };
 
-contextBridge.exposeInMainWorld("gxypi", api);
+contextBridge.exposeInMainWorld("orbit", api);

@@ -1,13 +1,15 @@
 /**
- * gxypi - Galaxy co-scientist extension for Pi.dev
+ * Loom — Galaxy co-scientist extension for Pi.dev.
  *
- * Provides plan-based analysis orchestration for Galaxy bioinformatics workflows.
+ * Brain-side runtime that plan-orchestrates Galaxy bioinformatics analyses.
  * Manages analysis state, registers custom tools, and injects context.
+ * Consumed by shells (the Loom CLI, the Orbit Electron app, future web UIs).
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { registerPlanTools } from "./tools";
 import { setupContextInjection } from "./context";
+import { setupUIBridge } from "./ui-bridge";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -32,6 +34,11 @@ import {
 export default function galaxyAnalystExtension(pi: ExtensionAPI): void {
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // UI bridge: structured plan events for shell consumers
+  // ─────────────────────────────────────────────────────────────────────────────
+  setupUIBridge(pi);
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // Session initialization
   // ─────────────────────────────────────────────────────────────────────────────
   pi.on("session_start", async (_event, ctx) => {
@@ -42,52 +49,65 @@ export default function galaxyAnalystExtension(pi: ExtensionAPI): void {
     // Reset state on new session
     resetState();
 
-    // First, check for notebooks in the current working directory
-    const cwd = process.cwd();
-    try {
-      const notebooks = await findNotebooks(cwd);
+    // LOOM_FRESH_SESSION=1 → shell (or user) wants a clean slate. Skip the
+    // notebook auto-load and the session-entry restore. Orbit's /new slash
+    // command sets this; any future shell can do the same.
+    const freshSession = process.env.LOOM_FRESH_SESSION === "1";
 
-      if (notebooks.length === 1) {
-        // Auto-load single notebook
-        const plan = await loadNotebook(notebooks[0].path);
-        if (plan) {
-          const completed = plan.steps.filter(s => s.status === 'completed').length;
+    if (!freshSession) {
+      // First, check for notebooks in the current working directory
+      const cwd = process.cwd();
+      try {
+        const notebooks = await findNotebooks(cwd);
+
+        if (notebooks.length === 1) {
+          // Auto-load single notebook
+          const plan = await loadNotebook(notebooks[0].path);
+          if (plan) {
+            const completed = plan.steps.filter(s => s.status === 'completed').length;
+            ctx.ui.notify(
+              `Loaded notebook: ${plan.title} (${completed}/${plan.steps.length} steps)`,
+              "info"
+            );
+          }
+        } else if (notebooks.length > 1) {
+          // Multiple notebooks found - notify user
           ctx.ui.notify(
-            `Loaded notebook: ${plan.title} (${completed}/${plan.steps.length} steps)`,
+            `Found ${notebooks.length} notebooks. Use analysis_notebook_open to select one.`,
             "info"
           );
         }
-      } else if (notebooks.length > 1) {
-        // Multiple notebooks found - notify user
-        ctx.ui.notify(
-          `Found ${notebooks.length} notebooks. Use analysis_notebook_open to select one.`,
-          "info"
+      } catch {
+        // Notebook loading failed, fall back to session entries
+      }
+
+      // Fall back to restoring from session entries
+      try {
+        const entries = ctx.sessionManager?.getEntries?.() || [];
+        const planEntries = entries.filter(
+          (e) => e.type === "custom" && (e as { customType?: string }).customType === "galaxy_analyst_plan"
         );
-      }
-    } catch {
-      // Notebook loading failed, fall back to session entries
-    }
 
-    // Fall back to restoring from session entries
-    try {
-      const entries = ctx.sessionManager?.getEntries?.() || [];
-      const planEntries = entries.filter(
-        (e) => e.type === "custom" && (e as { customType?: string }).customType === "galaxy_analyst_plan"
-      );
-
-      if (planEntries.length > 0) {
-        const latestEntry = planEntries[planEntries.length - 1] as { type: "custom"; data?: unknown };
-        if (latestEntry.data) {
-          restorePlan(latestEntry.data as AnalysisPlan);
-          ctx.ui.notify(`Restored plan: ${(latestEntry.data as AnalysisPlan).title}`, "info");
+        if (planEntries.length > 0) {
+          const latestEntry = planEntries[planEntries.length - 1] as { type: "custom"; data?: unknown };
+          if (latestEntry.data) {
+            restorePlan(latestEntry.data as AnalysisPlan);
+            ctx.ui.notify(`Restored plan: ${(latestEntry.data as AnalysisPlan).title}`, "info");
+          }
         }
+      } catch {
+        // Session manager may not be available in all contexts
       }
-    } catch {
-      // Session manager may not be available in all contexts
     }
 
-    // Populate sidebar tabs immediately
-    await refreshSidebar(ctx);
+    // Skip the initial LLM greeting in two cases:
+    // 1. Fresh session (LOOM_FRESH_SESSION=1) -- user wants to type immediately.
+    // 2. --continue restart (model switch, preferences save, mode toggle) --
+    //    chat history is already restored and the user already saw the
+    //    previous greeting; a new one would be redundant.
+    if (freshSession || process.argv.includes("--continue")) {
+      return;
+    }
 
     // Kick off an initial LLM turn with a proper greeting
     const plan = getCurrentPlan();
@@ -129,163 +149,19 @@ export default function galaxyAnalystExtension(pi: ExtensionAPI): void {
       // Fresh session with Galaxy credentials
       pi.sendUserMessage(
         `Session started, no existing analysis in this directory. ` +
-        `Give a brief welcome to gxypi, then ask what I'd like to work on — what research question or data do I have? ` +
+        `Give a brief welcome to Loom, then ask what I'd like to work on — what research question or data do I have? ` +
         `Keep the greeting to 2-3 sentences.${connectInstr}`
       );
     } else {
       // Fresh session, no credentials
       pi.sendUserMessage(
         `Session started, no existing analysis in this directory and no Galaxy server configured. ` +
-        `Give a brief welcome to gxypi, mention I can use /connect to set up a Galaxy server, ` +
+        `Give a brief welcome to Loom, mention I can use /connect to set up a Galaxy server, ` +
         `and ask what I'd like to work on. Keep it to 2-3 sentences.`
       );
     }
   });
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Sidebar refresh: push current state to all widget tabs
-  // ─────────────────────────────────────────────────────────────────────────────
-  async function refreshSidebar(ctx: ExtensionContext) {
-    const plan = getCurrentPlan();
-    const state = getState();
-
-    // -- Status tab --
-    const statusLines: string[] = ["🔬 gxypi Status", ""];
-    if (state.galaxyConnected) {
-      statusLines.push("✅ Connected to Galaxy");
-      if (process.env.GALAXY_URL) statusLines.push(`   Server: ${process.env.GALAXY_URL}`);
-      if (state.currentHistoryId) statusLines.push(`   History: ${state.currentHistoryId}`);
-    } else {
-      statusLines.push("⚪ Not connected to Galaxy");
-      statusLines.push("   Use /connect or ask to connect");
-    }
-    statusLines.push("");
-    if (plan) {
-      const completed = plan.steps.filter(s => s.status === 'completed').length;
-      const current = plan.steps.find(s => s.status === 'in_progress');
-      statusLines.push(`📋 Plan: ${plan.title}`);
-      statusLines.push(`   Status: ${plan.status}`);
-      statusLines.push(`   Progress: ${completed}/${plan.steps.length} steps`);
-      if (current) statusLines.push(`   Current: ${current.name}`);
-    } else {
-      statusLines.push("📋 No active plan");
-      statusLines.push("   Start by describing your analysis");
-    }
-    statusLines.push("");
-    const notebookPath = getNotebookPath();
-    if (notebookPath) {
-      statusLines.push(`📓 Notebook: ${notebookPath}`);
-    } else {
-      statusLines.push("📓 No notebook (in-memory only)");
-    }
-    ctx.ui.setWidget("status-view", statusLines);
-
-    // -- Plan tab --
-    if (plan) {
-      const phaseLabels: Record<string, string> = {
-        problem_definition: 'Problem Definition',
-        data_acquisition: 'Data Acquisition',
-        analysis: 'Analysis',
-        interpretation: 'Interpretation',
-        publication: 'Publication',
-      };
-      const phaseOrder = ['problem_definition', 'data_acquisition', 'analysis', 'interpretation', 'publication'];
-      const phaseIdx = phaseOrder.indexOf(plan.phase);
-      const planLines: string[] = [];
-      planLines.push(`📋 ${plan.title} [${plan.status}]`);
-      planLines.push(`   ${plan.context.researchQuestion.slice(0, 60)}${plan.context.researchQuestion.length > 60 ? '...' : ''}`);
-      planLines.push('');
-      const phaseBar = phaseOrder.map((p, i) => {
-        if (i < phaseIdx) return '●';
-        if (i === phaseIdx) return '◉';
-        return '○';
-      }).join('─');
-      planLines.push(`   Phase: ${phaseBar}  ${phaseLabels[plan.phase] || plan.phase}`);
-      planLines.push('');
-      for (const step of plan.steps) {
-        const icon = { pending: '⬜', in_progress: '🔄', completed: '✅', skipped: '⏭️', failed: '❌' }[step.status];
-        let extra = '';
-        if (step.result?.completedAt) {
-          extra = ` (${timeSince(step.result.completedAt)} ago)`;
-        }
-        planLines.push(`   ${icon} ${step.id}. ${step.name}${extra}`);
-      }
-      const completed = plan.steps.filter(s => s.status === 'completed').length;
-      planLines.push('');
-      planLines.push(`   Progress: ${completed}/${plan.steps.length} steps completed`);
-      planLines.push(`   Decisions: ${plan.decisions.length} logged`);
-      planLines.push(`   Checkpoints: ${plan.checkpoints.length}`);
-      ctx.ui.setWidget("plan-view", planLines);
-    } else {
-      ctx.ui.setWidget("plan-view", ["No active plan.", "", "Describe your analysis to get started."]);
-    }
-
-    // -- Decisions tab --
-    if (plan && plan.decisions.length > 0) {
-      const decLines: string[] = ["📝 Decision Log", ""];
-      const recent = plan.decisions.slice(-10);
-      for (const d of recent) {
-        const date = new Date(d.timestamp).toLocaleString();
-        const stepInfo = d.stepId ? ` (Step ${d.stepId})` : '';
-        const approved = d.researcherApproved ? '✓' : '?';
-        decLines.push(`[${d.type}]${stepInfo} ${approved}`);
-        decLines.push(`  ${d.description.slice(0, 70)}${d.description.length > 70 ? '...' : ''}`);
-        decLines.push(`  ${date}`);
-        decLines.push('');
-      }
-      ctx.ui.setWidget("decisions-view", decLines);
-    } else {
-      ctx.ui.setWidget("decisions-view", ["No decisions logged yet."]);
-    }
-
-    // -- Notebook tab --
-    if (notebookPath && plan) {
-      const nbLines: string[] = [];
-      nbLines.push(`📓 ${plan.title}`);
-      nbLines.push(`   Path: ${notebookPath}`);
-      nbLines.push(`   Status: ${plan.status}`);
-      const completed = plan.steps.filter(s => s.status === 'completed').length;
-      nbLines.push(`   Progress: ${completed}/${plan.steps.length} steps`);
-      nbLines.push("");
-      nbLines.push("Sections:");
-      nbLines.push("  - Research Context");
-      if (plan.dataProvenance) nbLines.push("  - Data Provenance");
-      nbLines.push("  - Analysis Plan");
-      if (plan.interpretation) nbLines.push("  - Interpretation");
-      nbLines.push("  - Execution Log");
-      nbLines.push("  - Galaxy References");
-      if (plan.publication) nbLines.push("  - Publication Materials");
-      ctx.ui.setWidget("notebook-view", nbLines);
-    } else {
-      const nbLines: string[] = ["No notebook loaded."];
-      try {
-        const cwd = process.cwd();
-        const notebooks = await findNotebooks(cwd);
-        if (notebooks.length > 0) {
-          nbLines.push("");
-          nbLines.push(`Found ${notebooks.length} notebook(s):`);
-          for (const nb of notebooks) {
-            nbLines.push(`  📄 ${nb.title} (${nb.completedSteps}/${nb.stepCount}, ${nb.status})`);
-          }
-        }
-      } catch {}
-      ctx.ui.setWidget("notebook-view", nbLines);
-    }
-
-    // -- Profiles tab --
-    const { profiles, active } = loadProfiles();
-    const names = Object.keys(profiles);
-    if (names.length > 0) {
-      const profLines: string[] = ["Galaxy Server Profiles", ""];
-      for (const name of names) {
-        const marker = name === active ? "*" : " ";
-        profLines.push(`  ${marker} ${name} (${profiles[name].url})`);
-      }
-      ctx.ui.setWidget("profiles-view", profLines);
-    } else {
-      ctx.ui.setWidget("profiles-view", ["No saved profiles.", "", "Use /connect to add a Galaxy server."]);
-    }
-  }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Register custom tools for plan management
@@ -431,7 +307,7 @@ export default function galaxyAnalystExtension(pi: ExtensionAPI): void {
         lines.push('');
       }
 
-      ctx.ui.setWidget("decisions-view", lines);
+      ctx.ui.notify(lines.join("\n"), "info");
     },
   });
 
@@ -556,7 +432,7 @@ export default function galaxyAnalystExtension(pi: ExtensionAPI): void {
       lines.push("");
       lines.push("Use /connect <name> to switch, or /connect to add a new server.");
 
-      ctx.ui.setWidget("profiles-view", lines);
+      ctx.ui.notify(lines.join("\n"), "info");
     },
   });
 
@@ -570,7 +446,7 @@ export default function galaxyAnalystExtension(pi: ExtensionAPI): void {
       const plan = getCurrentPlan();
 
       const lines: string[] = [];
-      lines.push("🔬 gxypi Status");
+      lines.push("🔬 Loom Status");
       lines.push("");
 
       // Connection status
@@ -614,7 +490,7 @@ export default function galaxyAnalystExtension(pi: ExtensionAPI): void {
         lines.push("   Use analysis_notebook_create to persist");
       }
 
-      ctx.ui.setWidget("status-view", lines);
+      ctx.ui.notify(lines.join("\n"), "info");
     },
   });
 
@@ -622,54 +498,42 @@ export default function galaxyAnalystExtension(pi: ExtensionAPI): void {
   // Register /notebook command for quick notebook access
   // ─────────────────────────────────────────────────────────────────────────────
   pi.registerCommand("notebook", {
-    description: "View current notebook info or list available notebooks",
+    description: "View current notebook content or list available notebooks",
     handler: async (_args, ctx) => {
       const notebookPath = getNotebookPath();
-      const plan = getCurrentPlan();
 
-      const lines: string[] = [];
-      lines.push("📓 Analysis Notebook");
-      lines.push("");
-
-      if (notebookPath && plan) {
-        lines.push(`Path: ${notebookPath}`);
-        lines.push(`Title: ${plan.title}`);
-        lines.push(`Status: ${plan.status}`);
-
-        const completed = plan.steps.filter(s => s.status === 'completed').length;
-        lines.push(`Progress: ${completed}/${plan.steps.length} steps`);
-
-        lines.push("");
-        lines.push("Sections:");
-        lines.push("  - Research Context");
-        lines.push("  - Analysis Plan (steps with YAML blocks)");
-        lines.push("  - Execution Log (append-only audit trail)");
-        lines.push("  - Galaxy References (dataset links)");
-      } else {
-        lines.push("No notebook loaded.");
-        lines.push("");
-
-        // List available notebooks
-        const cwd = process.cwd();
-        const notebooks = await findNotebooks(cwd);
-
-        if (notebooks.length > 0) {
-          lines.push(`Found ${notebooks.length} notebook(s) in ${cwd}:`);
-          lines.push("");
-          for (const nb of notebooks) {
-            lines.push(`  📄 ${nb.title}`);
-            lines.push(`     ${nb.path}`);
-            lines.push(`     ${nb.completedSteps}/${nb.stepCount} steps, ${nb.status}`);
-            lines.push("");
-          }
-          lines.push("Use analysis_notebook_open to load one.");
-        } else {
-          lines.push("No notebooks found in current directory.");
-          lines.push("Create a plan, then use analysis_notebook_create.");
+      // Active notebook: dump the live markdown file (plan + steps + decisions +
+      // galaxy refs), preceded by a short header. Shells route "notebook" to
+      // their Notebook tab.
+      if (notebookPath && fs.existsSync(notebookPath)) {
+        let content = "";
+        try {
+          content = fs.readFileSync(notebookPath, "utf-8");
+        } catch (err) {
+          ctx.ui.notify(`Failed to read notebook: ${err}`, "error");
+          return;
         }
+        const header = `> \`${notebookPath}\`\n\n`;
+        ctx.ui.setWidget("notebook", [header + content]);
+        return;
       }
 
-      ctx.ui.setWidget("notebook-view", lines);
+      // No active notebook: surface what's in the working dir so the user
+      // can decide whether to open one.
+      const cwd = process.cwd();
+      const notebooks = await findNotebooks(cwd);
+
+      const lines: string[] = ["# 📓 No notebook loaded", ""];
+      if (notebooks.length > 0) {
+        lines.push(`Found ${notebooks.length} notebook(s) in \`${cwd}\`:`, "");
+        for (const nb of notebooks) {
+          lines.push(`- **${nb.title}** — \`${nb.path}\` (${nb.completedSteps}/${nb.stepCount} steps, ${nb.status})`);
+        }
+        lines.push("", "Use `analysis_notebook_open` to load one.");
+      } else {
+        lines.push(`No notebooks found in \`${cwd}\`.`, "", "Create a plan, then use `analysis_notebook_create`.");
+      }
+      ctx.ui.setWidget("notebook", [lines.join("\n")]);
     },
   });
 
@@ -777,12 +641,6 @@ export default function galaxyAnalystExtension(pi: ExtensionAPI): void {
     }
   });
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Refresh sidebar after every turn so widgets stay current
-  // ─────────────────────────────────────────────────────────────────────────────
-  pi.on("turn_end", async (_event, ctx) => {
-    await refreshSidebar(ctx);
-  });
 }
 
 function timeSince(iso: string): string {

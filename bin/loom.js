@@ -8,7 +8,7 @@ import { homedir } from "os";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// gxypi is a standalone product — suppress Pi's own update notifications
+// Loom is a standalone product — suppress Pi's own update notifications
 process.env.PI_SKIP_VERSION_CHECK = "1";
 
 // Resolve extension paths relative to this script
@@ -76,16 +76,23 @@ async function handleInformationalCommand() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Consolidated config (~/.gxypi/config.json)
+// Loom brain-level config (~/.loom/config.json)
+//
+// Shared by every consumer (loom CLI, Orbit, future shells). The CLI only
+// reads/writes it; it doesn't own the schema. Shell-specific state lives in
+// each shell's own dir.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const gxypiConfigDir = join(homedir(), ".gxypi");
-const gxypiConfigPath = join(gxypiConfigDir, "config.json");
+const loomConfigDir = join(homedir(), ".loom");
+const loomConfigPath = join(loomConfigDir, "config.json");
 
-function loadGxypiConfig() {
-  if (existsSync(gxypiConfigPath)) {
+// Legacy path kept for one-shot migration.
+const legacyGxypiConfigPath = join(homedir(), ".gxypi", "config.json");
+
+function loadLoomConfig() {
+  if (existsSync(loomConfigPath)) {
     try {
-      return JSON.parse(readFileSync(gxypiConfigPath, "utf-8"));
+      return JSON.parse(readFileSync(loomConfigPath, "utf-8"));
     } catch {
       return {};
     }
@@ -93,9 +100,24 @@ function loadGxypiConfig() {
   return {};
 }
 
-function saveGxypiConfig(config) {
-  mkdirSync(gxypiConfigDir, { recursive: true });
-  writeFileSync(gxypiConfigPath, JSON.stringify(config, null, 2) + "\n");
+function saveLoomConfig(config) {
+  mkdirSync(loomConfigDir, { recursive: true });
+  writeFileSync(loomConfigPath, JSON.stringify(config, null, 2) + "\n");
+}
+
+// One-shot migration: copy ~/.gxypi/config.json to ~/.loom/config.json.
+// Runs before any other legacy migration so the canonical path is populated
+// before we look at ~/.pi/agent/ legacy files.
+function migrateFromGxypi() {
+  if (existsSync(loomConfigPath)) return;
+  if (!existsSync(legacyGxypiConfigPath)) return;
+  try {
+    const legacy = JSON.parse(readFileSync(legacyGxypiConfigPath, "utf-8"));
+    mkdirSync(loomConfigDir, { recursive: true });
+    writeFileSync(loomConfigPath, JSON.stringify(legacy, null, 2) + "\n");
+  } catch {
+    // Corrupt legacy file; ignore and let the ~/.pi migration try its thing.
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -106,7 +128,7 @@ const agentDir = process.env.PI_CODING_AGENT_DIR
   || join(homedir(), ".pi", "agent");
 
 function migrateLegacyFiles() {
-  if (existsSync(gxypiConfigPath)) return;
+  if (existsSync(loomConfigPath)) return;
 
   let config = {};
   let migrated = false;
@@ -147,11 +169,12 @@ function migrateLegacyFiles() {
   }
 
   if (migrated) {
-    saveGxypiConfig(config);
+    saveLoomConfig(config);
   }
 }
 
 if (!isInformationalCommand) {
+  migrateFromGxypi();
   migrateLegacyFiles();
 }
 
@@ -159,7 +182,7 @@ if (!isInformationalCommand) {
 // Apply consolidated config
 // ─────────────────────────────────────────────────────────────────────────────
 
-const gxypiConfig = loadGxypiConfig();
+const loomConfig = loadLoomConfig();
 
 // Provider name → env var mapping
 const PROVIDER_ENV_MAP = {
@@ -172,18 +195,25 @@ const PROVIDER_ENV_MAP = {
 };
 
 // LLM config: set env var if not already present
-if (gxypiConfig.llm?.apiKey) {
-  const provider = gxypiConfig.llm.provider || "anthropic";
+if (loomConfig.llm?.apiKey) {
+  const provider = loomConfig.llm.provider || "anthropic";
   const envVar = PROVIDER_ENV_MAP[provider] || "AI_GATEWAY_API_KEY";
   if (!process.env[envVar]) {
-    process.env[envVar] = gxypiConfig.llm.apiKey;
+    process.env[envVar] = loomConfig.llm.apiKey;
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Ensure Galaxy MCP is configured before Pi starts
+// Configure Galaxy MCP based on executionMode
+//
+// Remote (default): register the Galaxy MCP server so the LLM can call
+// Galaxy tools directly. Reproducibility + large-scale compute lives here.
+// Local: strip Galaxy MCP entirely. The LLM has no Galaxy tools available,
+// only local run_command / plan management / notebook updates. This is what
+// the "Local" toggle in Orbit's masthead actually flips.
 // ─────────────────────────────────────────────────────────────────────────────
 
+const executionMode = loomConfig.executionMode || "remote";
 const mcpConfigPath = join(agentDir, "mcp.json");
 
 let mcpConfig = {};
@@ -193,17 +223,24 @@ if (!isInformationalCommand) {
   }
 
   mcpConfig.mcpServers = mcpConfig.mcpServers || {};
-  if (!mcpConfig.mcpServers.galaxy) {
-    mcpConfig.mcpServers.galaxy = {
-      command: "uvx",
-      args: ["galaxy-mcp"],
-    };
+
+  if (executionMode === "remote") {
+    if (!mcpConfig.mcpServers.galaxy) {
+      mcpConfig.mcpServers.galaxy = {
+        command: "uvx",
+        args: ["galaxy-mcp"],
+      };
+    }
+    // Expose Galaxy tools as direct (first-class) tools so the LLM can call
+    // them by name instead of going through the mcp() proxy gateway.
+    if (!mcpConfig.mcpServers.galaxy.directTools) {
+      mcpConfig.mcpServers.galaxy.directTools = true;
+    }
+  } else {
+    // Local mode: tear down Galaxy MCP if it was previously registered.
+    delete mcpConfig.mcpServers.galaxy;
   }
-  // Expose Galaxy tools as direct (first-class) tools so the LLM can call them
-  // by name instead of going through the mcp() proxy gateway
-  if (!mcpConfig.mcpServers.galaxy.directTools) {
-    mcpConfig.mcpServers.galaxy.directTools = true;
-  }
+
   mkdirSync(dirname(mcpConfigPath), { recursive: true });
   writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2));
 }
@@ -215,8 +252,8 @@ if (!isInformationalCommand) {
 let galaxyLoaded = false;
 
 // 1. Consolidated config
-if (!isInformationalCommand && gxypiConfig.galaxy?.active && gxypiConfig.galaxy.profiles) {
-  const active = gxypiConfig.galaxy.profiles[gxypiConfig.galaxy.active];
+if (!isInformationalCommand && loomConfig.galaxy?.active && loomConfig.galaxy.profiles) {
+  const active = loomConfig.galaxy.profiles[loomConfig.galaxy.active];
   if (active) {
     if (!process.env.GALAXY_URL) process.env.GALAXY_URL = active.url;
     if (!process.env.GALAXY_API_KEY) process.env.GALAXY_API_KEY = active.apiKey;
@@ -291,7 +328,7 @@ function checkLLMProvider() {
   if (hasArg("--provider")) return;
 
   // Consolidated config has an API key
-  if (gxypiConfig.llm?.apiKey) return;
+  if (loomConfig.llm?.apiKey) return;
 
   const providerEnvVars = [
     "ANTHROPIC_API_KEY", "ANTHROPIC_OAUTH_TOKEN",
@@ -320,12 +357,12 @@ function checkLLMProvider() {
     } catch {}
   }
 
-  console.error(`gxypi requires an LLM provider to function.
+  console.error(`loom requires an LLM provider to function.
 
 Set up one of the following:
 
   1. Config file (recommended):
-     Create ~/.gxypi/config.json:
+     Create ~/.loom/config.json:
      {
        "llm": {
          "provider": "anthropic",
@@ -339,7 +376,7 @@ Set up one of the following:
 
   3. Custom provider (~/.pi/agent/models.json):
      For local/self-hosted models via litellm, ollama, etc.
-     See: https://github.com/galaxyproject/gxypi#providers
+     See: https://github.com/galaxyproject/pi-galaxy-analyst#local-llms
 
   4. OAuth login:
      Run with --provider anthropic (or openai, google, etc.)
@@ -355,10 +392,10 @@ Set up one of the following:
 const providerArgs = [];
 if (!hasArg("--provider")) {
   // Prefer consolidated config
-  if (gxypiConfig.llm?.provider) {
-    providerArgs.push("--provider", gxypiConfig.llm.provider);
-    if (gxypiConfig.llm.model && !userArgs.includes("--model") && !userArgs.some(a => a.startsWith("--model="))) {
-      providerArgs.push("--model", gxypiConfig.llm.model);
+  if (loomConfig.llm?.provider) {
+    providerArgs.push("--provider", loomConfig.llm.provider);
+    if (loomConfig.llm.model && !userArgs.includes("--model") && !userArgs.some(a => a.startsWith("--model="))) {
+      providerArgs.push("--model", loomConfig.llm.model);
     }
   } else {
     // Fall back to legacy models.json

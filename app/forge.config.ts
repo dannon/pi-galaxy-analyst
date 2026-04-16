@@ -3,8 +3,8 @@ import { VitePlugin } from "@electron-forge/plugin-vite";
 
 const config: ForgeConfig = {
   packagerConfig: {
-    name: "gxypi",
-    executableName: "gxypi",
+    name: "Orbit",
+    executableName: "orbit",
     icon: "resources/icon",
   },
   makers: [

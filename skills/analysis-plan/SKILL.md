@@ -532,7 +532,7 @@ When a BRC Analytics MCP server is connected, use the catalog to discover organi
 - Researcher wants to run a standard analysis pipeline for a cataloged organism
 - You need to determine compatible reference assemblies or gene annotations
 
-### Key MCP Tools (provided by BRC server, not gxypi)
+### Key MCP Tools (provided by BRC server, not loom)
 
 | Tool | Use For |
 |------|---------|

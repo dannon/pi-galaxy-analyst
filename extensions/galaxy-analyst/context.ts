@@ -7,6 +7,46 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { getCurrentPlan, getState, formatPlanSummary, getWorkflowSteps, getBRCContext } from "./state";
+import { loadConfig } from "./config";
+
+/** Build the execution-mode block injected into every system prompt. */
+function buildExecutionModeContext(): string {
+  const cfg = loadConfig();
+  const mode = cfg.executionMode || "remote";
+  const galaxyUrl = process.env.GALAXY_URL || cfg.galaxy?.profiles?.[cfg.galaxy.active || ""]?.url;
+
+  if (mode === "local") {
+    return `
+## Execution mode: Local
+
+Galaxy MCP tools are not registered in this session. Run work locally using
+whatever local execution primitives are available. Plan management, notebook
+updates, and non-Galaxy reasoning all still work normally.
+
+If the user wants reproducibility or large-scale compute, suggest switching
+to Remote mode in the masthead toggle so Galaxy user-defined tools become
+available.
+`;
+  }
+
+  return `
+## Execution mode: Remote (Galaxy: ${galaxyUrl || "configured"})
+
+Both execution paths are available, with a clear default:
+
+- **Preferred: Galaxy user-defined tools.** Search Galaxy first; run real
+  computation via \`galaxy_run_tool\` / \`galaxy_invoke_workflow\`.
+  Reproducibility and provenance live in Galaxy -- that's why it's the
+  default.
+- **Local execution** is fine for quick, exploratory, or ad-hoc work that
+  doesn't merit a Galaxy tool wrapper. Use it when the user explicitly asks
+  or when Galaxy has no equivalent tool.
+
+When a custom step has no Galaxy equivalent but is likely to be reused,
+suggest wrapping it as a Galaxy tool rather than leaving it as a one-off
+local script.
+`;
+}
 
 export function setupContextInjection(pi: ExtensionAPI): void {
 
@@ -50,7 +90,7 @@ parameters. When the researcher makes selections, record them with \`brc_set_con
 
       return {
         systemPrompt: `
-## gxypi Status
+## Loom Status
 No active analysis plan.
 
 **Start a plan immediately.** As soon as the researcher describes their question or data,
@@ -64,6 +104,7 @@ If the researcher's opening message already contains this information, create th
 right away without asking clarifying questions first.
 ${brcSection}
 ${galaxyContext}
+${buildExecutionModeContext()}
 `
       };
     }
@@ -106,15 +147,34 @@ ${galaxyContext}
 
 ${planSummary}
 
-## Analysis Protocol Reminders
+## Analysis Protocol
 - Get researcher approval before each step
 - Log decisions with \`analysis_step_log\`
 - Update step status with \`analysis_plan_update_step\`
 - Create QC checkpoints with \`analysis_checkpoint\`
 - Record biological findings with \`interpretation_add_finding\`
 - Use \`analysis_plan_get\` for full plan details
+- Use \`report_result\` for tables, plots, files, and markdown summaries
+- Use \`analyze_plan_parameters\` when the user requests parameter review
+
+## Execution Rules
+- Default tool execution is Galaxy user-defined tools. Search Galaxy for existing tools first.
+- DO NOT narrate plan execution in chat. The shell renders progress from structured events.
+- Use tools — NOT chat prose — to communicate during execution:
+  - \`analysis_plan_update_step\` → step progress (visible in the DAG)
+  - \`report_result\` → output tables, plots, files (visible in Results tab)
+- Chat is for questions, conclusions, and user-visible reasoning only.
+- After calling \`analysis_plan_create\`, do NOT write a plan summary in chat — the Plan tab already shows it.
+
+## Response Style
+- Be extremely concise. No filler, no chatter, no pleasantries.
+- Lead with the answer or action. Skip preamble and transitions.
+- One sentence when one sentence suffices. Never repeat what the user said.
+- Do NOT use exclamation marks, "Great!", "Excellent!", "Sure!", or similar.
+- Minimize emoji usage. Plain text is preferred.
 ${workflowContext}${brcSection}
 ${galaxyContext}
+${buildExecutionModeContext()}
 `
     };
   });
@@ -138,7 +198,7 @@ ${galaxyContext}
 
       ctx.ui.setStatus("galaxy-plan", statusText);
     } else {
-      ctx.ui.setStatus("galaxy-plan", "🔬 gxypi ready");
+      ctx.ui.setStatus("galaxy-plan", "🔬 Loom ready");
     }
   });
 }

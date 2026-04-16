@@ -1,4 +1,4 @@
-# gxypi: AI-Assisted Bioinformatics with Full Reproducibility
+# Loom: AI-Assisted Bioinformatics with Full Reproducibility
 
 ## The Problem
 
@@ -11,7 +11,7 @@ Bioinformatics analyses are complex, multi-step workflows where:
 
 ## The Solution
 
-gxypi is an AI co-scientist that:
+Loom is an AI co-scientist that:
 
 1. **Structures every analysis** with a formal plan before execution
 2. **Documents every decision** with rationale and researcher approval
@@ -205,7 +205,7 @@ checkpoint:
 
 ### For Reproducibility
 
-| Traditional Approach | With gxypi |
+| Traditional Approach | With Loom |
 |---------------------|------------------------|
 | "I think we used HISAT2..." | Decision logged with rationale |
 | "Check the Galaxy history" | Direct links to every dataset |
@@ -241,7 +241,7 @@ checkpoint:
 
 - Galaxy account (usegalaxy.org or local instance)
 - Pi.dev CLI (`pip install pi-cli`)
-- This extension (`pi install gxypi`)
+- This extension (`pi install loom`)
 
 ### Privacy & Security
 
