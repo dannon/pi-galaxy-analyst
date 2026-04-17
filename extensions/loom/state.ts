@@ -1033,8 +1033,42 @@ export function recordAssertion(params: RecordAssertionParams): Assertion {
     state.currentPlan.assertions = [];
   }
 
+  const now = new Date().toISOString();
+  const verdict = computeAssertionVerdict(
+    params.kind,
+    params.expected,
+    params.observed,
+    params.tolerance,
+  );
+
+  // If a pending draft with this claim already exists (same case-insensitive
+  // text), upgrade it in place rather than appending a duplicate. Lets the
+  // sketch-seeded drafts flow through `analysis_assert` without leaving a
+  // second row behind. Scoped to pending verdicts so recording a fresh claim
+  // that happens to read identically doesn't silently clobber a finalized one.
+  const claimKey = params.claim.toLowerCase().trim();
+  const existingDraft = state.currentPlan.assertions.find(
+    (a) => a.verdict === "pending" && a.claim.toLowerCase().trim() === claimKey,
+  );
+  if (existingDraft) {
+    existingDraft.stepId = params.stepId ?? existingDraft.stepId;
+    existingDraft.claim = params.claim;
+    existingDraft.kind = params.kind;
+    existingDraft.expected = params.expected;
+    existingDraft.observed = params.observed;
+    existingDraft.tolerance = params.tolerance;
+    existingDraft.datasetId = params.datasetId ?? existingDraft.datasetId;
+    existingDraft.source = params.source ?? existingDraft.source;
+    existingDraft.expectedFromPlan = params.expectedFromPlan;
+    existingDraft.verdict = verdict;
+    existingDraft.recordedAt = now;
+    state.currentPlan.updated = now;
+    notifyPlanChange();
+    return existingDraft;
+  }
+
   const assertion: Assertion = {
-    id: `assertion-${state.currentPlan.assertions.length + 1}`,
+    id: generateId(),
     stepId: params.stepId,
     claim: params.claim,
     kind: params.kind,
@@ -1043,13 +1077,13 @@ export function recordAssertion(params: RecordAssertionParams): Assertion {
     tolerance: params.tolerance,
     datasetId: params.datasetId,
     source: params.source,
-    verdict: computeAssertionVerdict(params.kind, params.expected, params.observed, params.tolerance),
-    recordedAt: new Date().toISOString(),
+    verdict,
+    recordedAt: now,
     expectedFromPlan: params.expectedFromPlan,
   };
 
   state.currentPlan.assertions.push(assertion);
-  state.currentPlan.updated = assertion.recordedAt;
+  state.currentPlan.updated = now;
   notifyPlanChange();
 
   return assertion;
@@ -1077,7 +1111,7 @@ export function draftAssertionFromSketch(params: DraftAssertionFromSketchParams)
   }
 
   const assertion: Assertion = {
-    id: `assertion-${state.currentPlan.assertions.length + 1}`,
+    id: generateId(),
     stepId: params.stepId,
     claim: params.claim,
     kind: "categorical",
@@ -1135,9 +1169,23 @@ export function seedAssertionsFromSketchCorpus(params: {
 
   for (const match of matches) {
     const source = `sketch:${match.frontmatter.name}`;
-    const claims = (match.frontmatter.expected_output || [])
-      .flatMap((eo: { assertions?: string[] }) => eo.assertions || [])
-      .filter(Boolean) as string[];
+    // A malformed expected_output (object instead of array, non-string
+    // assertions, etc.) should only skip that sketch, not abort seeding for
+    // the whole corpus -- the sketch schema is loaded from an external repo.
+    let claims: string[];
+    try {
+      const eoList = Array.isArray(match.frontmatter.expected_output)
+        ? match.frontmatter.expected_output
+        : [];
+      claims = eoList
+        .flatMap((eo: { assertions?: unknown }) =>
+          Array.isArray(eo?.assertions) ? eo.assertions : [],
+        )
+        .filter((c): c is string => typeof c === "string" && c.trim() !== "");
+    } catch (err) {
+      console.warn(`[sketches] skipping malformed expected_output in ${match.frontmatter.name}:`, err);
+      continue;
+    }
 
     for (const claim of claims) {
       const key = claim.toLowerCase().trim();

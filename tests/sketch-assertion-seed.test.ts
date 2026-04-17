@@ -231,6 +231,178 @@ describe("seedAssertionsFromSketchCorpus", () => {
       expect(a.source).toBe("sketch:alphagenome-gwas-regulatory");
     }
   });
+
+  it("collapses duplicate claims when two matching sketches share a claim", () => {
+    makeAlphaGenomePlan();
+    const SECOND_SKETCH = `---
+name: alphagenome-companion
+tags:
+  - alphagenome
+tools:
+  - name: alphagenome_ism_scanner
+expected_output:
+  - assertions:
+      - Top ISM position scored above 3.0 for validated loci
+      - A claim only this sketch contributes
+---
+
+Body.
+`;
+    root = makeCorpus({
+      "alphagenome/SKETCH.md": ALPHAGENOME_SKETCH,
+      "companion/SKETCH.md": SECOND_SKETCH,
+    });
+
+    const result = seedAssertionsFromSketchCorpus({ corpusPath: root });
+
+    // 3 unique from the first sketch + 1 unique from the second, 1 duplicate skipped.
+    expect(result.added).toBe(4);
+    expect(result.skipped).toBe(1);
+    const topIsmClaims = getCurrentPlan()!.assertions!.filter((a) =>
+      a.claim.startsWith("Top ISM position"),
+    );
+    expect(topIsmClaims).toHaveLength(1);
+  });
+
+  it("tolerates a malformed expected_output on one sketch without aborting the corpus", () => {
+    const MALFORMED_EXPECTED = `---
+name: alphagenome-broken
+tags:
+  - alphagenome
+tools:
+  - name: alphagenome_ism_scanner
+expected_output:
+  not_an_array: true
+---
+
+Body.
+`;
+    makeAlphaGenomePlan();
+    root = makeCorpus({
+      "broken/SKETCH.md": MALFORMED_EXPECTED,
+      "good/SKETCH.md": ALPHAGENOME_SKETCH,
+    });
+
+    const result = seedAssertionsFromSketchCorpus({ corpusPath: root });
+
+    // Broken sketch contributes 0 claims, good sketch still contributes 3.
+    expect(result.added).toBe(3);
+  });
+
+  it("tolerates non-string assertion entries within expected_output", () => {
+    const MIXED_ASSERTIONS = `---
+name: alphagenome-mixed
+tags:
+  - alphagenome
+tools:
+  - name: alphagenome_ism_scanner
+expected_output:
+  - assertions:
+      - A valid claim
+      - 42
+      - null
+      - Another valid claim
+---
+
+Body.
+`;
+    makeAlphaGenomePlan();
+    root = makeCorpus({ "mixed/SKETCH.md": MIXED_ASSERTIONS });
+
+    const result = seedAssertionsFromSketchCorpus({ corpusPath: root });
+
+    expect(result.added).toBe(2);
+    const claims = getCurrentPlan()!.assertions!.map((a) => a.claim);
+    expect(claims).toContain("A valid claim");
+    expect(claims).toContain("Another valid claim");
+  });
+});
+
+describe("analysis_assert upgrades a seeded draft instead of duplicating it", () => {
+  let root: string;
+
+  beforeEach(() => {
+    resetState();
+  });
+
+  afterEach(() => {
+    if (root) fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("updates the draft in place when the same claim is later recorded", () => {
+    makeAlphaGenomePlan();
+    root = makeCorpus({ "alphagenome/SKETCH.md": ALPHAGENOME_SKETCH });
+    seedAssertionsFromSketchCorpus({ corpusPath: root });
+
+    const draftCount = getCurrentPlan()!.assertions!.length;
+    const draft = getCurrentPlan()!.assertions!.find((a) =>
+      a.claim.startsWith("Top ISM position"),
+    )!;
+    expect(draft.verdict).toBe("pending");
+    const draftId = draft.id;
+
+    const finalized = recordAssertion({
+      claim: "Top ISM position scored above 3.0 for validated loci",
+      kind: "categorical",
+      expected: "above-3",
+      observed: "above-3",
+    });
+
+    // Same row, not an appended duplicate.
+    expect(getCurrentPlan()!.assertions).toHaveLength(draftCount);
+    expect(finalized.id).toBe(draftId);
+    expect(finalized.verdict).toBe("exact_match");
+  });
+
+  it("preserves the draft's stepId when the update doesn't override it", () => {
+    makeAlphaGenomePlan();
+    const stepId = getCurrentPlan()!.steps[0].id;
+    root = makeCorpus({ "alphagenome/SKETCH.md": ALPHAGENOME_SKETCH });
+    seedAssertionsFromSketchCorpus({ corpusPath: root, stepId });
+
+    const finalized = recordAssertion({
+      claim: "Top ISM position scored above 3.0 for validated loci",
+      kind: "categorical",
+      expected: "x",
+      observed: "x",
+    });
+
+    expect(finalized.stepId).toBe(stepId);
+  });
+
+  it("does not clobber a finalized assertion that happens to share claim text", () => {
+    makeAlphaGenomePlan();
+    const finalized = recordAssertion({
+      claim: "Top ISM position scored above 3.0 for validated loci",
+      kind: "categorical",
+      expected: "exact",
+      observed: "exact",
+    });
+    expect(finalized.verdict).toBe("exact_match");
+    root = makeCorpus({ "alphagenome/SKETCH.md": ALPHAGENOME_SKETCH });
+
+    // Seeding the same claim finds the finalized row (not pending) and skips.
+    const result = seedAssertionsFromSketchCorpus({ corpusPath: root });
+    expect(result.added).toBe(2);
+    expect(result.skipped).toBe(1);
+
+    // Now recording the same claim again should append (no pending draft to
+    // upgrade, finalized row is untouched by the pending-only lookup).
+    const again = recordAssertion({
+      claim: "Top ISM position scored above 3.0 for validated loci",
+      kind: "categorical",
+      expected: "exact",
+      observed: "exact",
+    });
+    expect(again.id).not.toBe(finalized.id);
+    // Still only one pending draft in the finalized state -- the original
+    // finalized row is preserved, no data loss.
+    expect(
+      getCurrentPlan()!.assertions!.filter(
+        (a) => a.id === finalized.id,
+      ),
+    ).toHaveLength(1);
+  });
 });
 
 describe("assertion_added sync path rewrites the verification section on disk", () => {

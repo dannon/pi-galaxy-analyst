@@ -140,8 +140,9 @@ describe("recordAssertion", () => {
     expect(a1.verdict).toBe("within_tolerance");
     expect(a2.verdict).toBe("exact_match");
     expect(getCurrentPlan()!.assertions).toHaveLength(2);
-    expect(getCurrentPlan()!.assertions![0].id).toBe("assertion-1");
-    expect(getCurrentPlan()!.assertions![1].id).toBe("assertion-2");
+    expect(a1.id).toBeTruthy();
+    expect(a2.id).toBeTruthy();
+    expect(a1.id).not.toBe(a2.id);
   });
 
   it("round-trips assertions through notebook write + parse", () => {
