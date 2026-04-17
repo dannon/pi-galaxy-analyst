@@ -58,7 +58,7 @@ export function registerIpcHandlers(agent: AgentManager): void {
     return result.filePaths[0] ?? null;
   });
 
-  ipcMain.handle("dialog:select-directory", async () => {
+  ipcMain.handle("dialog:select-directory", async (e) => {
     const result = await dialog.showOpenDialog({
       title: "Choose working directory",
       defaultPath: agent.getCwd(),
@@ -67,6 +67,12 @@ export function registerIpcHandlers(agent: AgentManager): void {
     const dir = result.filePaths[0] ?? null;
     if (dir && agent.switchCwd(dir)) {
       log("directory changed to:", dir);
+      // Mirror the File > Open Analysis Directory path so the renderer
+      // resets its UI when the cwd changes via the top-bar "change" button.
+      BrowserWindow.fromWebContents(e.sender)?.webContents.send(
+        "agent:cwd-changed",
+        dir,
+      );
     }
     return dir;
   });
