@@ -21,7 +21,7 @@
 - `extensions/loom/teams/types.ts` — `TeamSpec`, `RoleSpec`, `TeamResult`, `TeamTurn`, `DispatchDeps`, `RoleTurnResult`.
 - `extensions/loom/teams/readonly-registry.ts` — curated set of Loom tool names that are read-only, plus Pi built-ins classification.
 - `extensions/loom/teams/tool-filter.ts` — `filterToolsForRole(role, registry, readonlyNames)`.
-- `extensions/loom/teams/validate.ts` — `validateTeamSpec(spec, registry)`.
+- `extensions/loom/teams/validate.ts` — `validateTeamSpec(spec)`.
 - `extensions/loom/teams/critic-parser.ts` — `parseCriticResponse(text)`.
 - `extensions/loom/teams/dispatcher.ts` — `runTeamDispatch(spec, deps, signal, onUpdate)`.
 - `extensions/loom/teams/tool.ts` — registers the `team_dispatch` Pi tool.
