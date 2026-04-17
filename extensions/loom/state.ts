@@ -1506,7 +1506,8 @@ export async function syncToNotebook(
     | 'interpretation_finding'
     | 'interpretation_summary'
     | 'brc_context_updated'
-    | 'result_reported',
+    | 'result_reported'
+    | 'assertion_added',
   data: Record<string, unknown>
 ): Promise<void> {
   if (!state.notebookPath) {
@@ -1668,6 +1669,16 @@ export async function syncToNotebook(
         // The result is already on state.currentPlan.results; regenerate the
         // notebook so the new Results section appears under the right step
         // (or in the plan-level Results bucket).
+        if (state.currentPlan) {
+          content = generateNotebook(state.currentPlan);
+        }
+        break;
+
+      case 'assertion_added':
+        // The assertion is already on state.currentPlan.assertions; regenerate
+        // the notebook so the verification section (assertions_json block) is
+        // rewritten from current plan state. Frontmatter-only sync wouldn't
+        // touch that section and the parser restores assertions from it.
         if (state.currentPlan) {
           content = generateNotebook(state.currentPlan);
         }

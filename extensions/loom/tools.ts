@@ -2823,7 +2823,11 @@ analyses in Galaxy.`,
         expectedFromPlan: params.expectedFromPlan,
       });
 
-      await syncToNotebook('frontmatter', { updated: new Date().toISOString() });
+      await syncToNotebook('assertion_added', {
+        claim: stored.claim,
+        verdict: stored.verdict,
+        kind: stored.kind,
+      });
 
       return {
         content: [{ type: "text" as const, text: JSON.stringify({ success: true, assertion: stored }) }],
@@ -2875,7 +2879,10 @@ analyses in Galaxy.`,
           stepId: params.stepId,
         });
         if (result.added > 0) {
-          await syncToNotebook('frontmatter', { updated: new Date().toISOString() });
+          await syncToNotebook('assertion_added', {
+            claim: `seeded ${result.added} draft(s) from matching sketches`,
+            verdict: 'pending',
+          });
         }
         return {
           content: [{ type: "text" as const, text: JSON.stringify({ success: true, added: result.added, skipped: result.skipped }) }],

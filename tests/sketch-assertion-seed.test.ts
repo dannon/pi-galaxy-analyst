@@ -10,8 +10,10 @@ import {
   seedAssertionsFromSketchCorpus,
   recordAssertion,
   getCurrentPlan,
+  setNotebookPath,
+  syncToNotebook,
 } from "../extensions/loom/state";
-import { generateNotebook } from "../extensions/loom/notebook-writer";
+import { generateNotebook, writeNotebook, getDefaultNotebookPath } from "../extensions/loom/notebook-writer";
 import { parseNotebook, notebookToPlan } from "../extensions/loom/notebook-parser";
 
 /**
@@ -228,6 +230,50 @@ describe("seedAssertionsFromSketchCorpus", () => {
     for (const a of getCurrentPlan()!.assertions!) {
       expect(a.source).toBe("sketch:alphagenome-gwas-regulatory");
     }
+  });
+});
+
+describe("assertion_added sync path rewrites the verification section on disk", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    resetState();
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "loom-sync-"));
+  });
+
+  afterEach(() => {
+    if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("regenerates the assertions block when syncToNotebook('assertion_added') runs", async () => {
+    makeAlphaGenomePlan();
+    const notebookPath = path.join(tmpDir, "plan.md");
+    // Seed the file with an initial notebook (no assertions yet).
+    await writeNotebook(notebookPath, generateNotebook(getCurrentPlan()!));
+    setNotebookPath(notebookPath);
+
+    // Verify the starting file has no assertions_json.
+    expect(fs.readFileSync(notebookPath, "utf-8")).not.toContain("assertions_json");
+
+    // Record a real assertion and trigger the sync path the tool uses.
+    const stored = recordAssertion({
+      claim: "Top ISM position is above threshold",
+      kind: "categorical",
+      expected: "true",
+      observed: "true",
+      source: "manual",
+    });
+    await syncToNotebook("assertion_added", {
+      claim: stored.claim,
+      verdict: stored.verdict,
+      kind: stored.kind,
+    });
+
+    // The on-disk file now has the assertions_json block -- frontmatter-only
+    // sync would never have touched it.
+    const after = fs.readFileSync(notebookPath, "utf-8");
+    expect(after).toContain("assertions_json");
+    expect(after).toContain("Top ISM position is above threshold");
   });
 });
 

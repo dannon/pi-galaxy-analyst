@@ -23,6 +23,7 @@ export const COMMIT_CHANGE_TYPES = new Set([
   "data_provenance",
   "publication_update",
   "brc_context_updated",
+  "assertion_added",
 ]);
 
 const GITIGNORE_CONTENT = `# Large bioinformatics data
@@ -129,6 +130,8 @@ export function buildCommitMessage(
       return "Data provenance updated";
     case "publication_update":
       return `Publication: ${data.updateType ?? "update"}`;
+    case "assertion_added":
+      return `Assertion: ${data.claim ?? "claim recorded"} (${data.verdict ?? "pending"})`;
     default:
       return `Notebook update (${changeType})`;
   }
