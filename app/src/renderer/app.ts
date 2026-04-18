@@ -772,21 +772,31 @@ window.orbit.onAgentEvent((event) => {
       // Turn might not be fully done until agent_end
       break;
 
-    case "tool_start": {
+    case "tool_execution_start": {
       chat.hideThinking();
-      const name = (event as { tool?: string }).tool || "tool";
-      const id = (event as { id?: string }).id || name;
+      const name = (event as { toolName?: string }).toolName || "tool";
+      const id = (event as { toolCallId?: string }).toolCallId || name;
       chat.addToolCard(id, name);
       statusBadge.textContent = `running: ${name}`;
       statusBadge.className = "status-badge running";
       break;
     }
 
-    case "tool_end": {
-      const id = (event as { id?: string }).id || "";
-      const result = (event as { result?: string }).result;
-      const error = (event as { error?: string }).error;
-      chat.updateToolCard(id, error ? "error" : "done", result || error);
+    case "tool_execution_update": {
+      const id = (event as { toolCallId?: string }).toolCallId || "";
+      const partial = (event as { partialResult?: { details?: unknown } }).partialResult;
+      const details = (partial as { details?: { kind?: string } } | undefined)?.details;
+      chat.updateToolCard(id, "running", undefined, details);
+      break;
+    }
+
+    case "tool_execution_end": {
+      const id = (event as { toolCallId?: string }).toolCallId || "";
+      const isError = Boolean((event as { isError?: boolean }).isError);
+      const result = (event as { result?: { content?: Array<{ text?: string }>; details?: unknown } }).result;
+      const text = result?.content?.[0]?.text;
+      const details = (result as { details?: { kind?: string } } | undefined)?.details;
+      chat.updateToolCard(id, isError ? "error" : "done", text, details);
       break;
     }
 

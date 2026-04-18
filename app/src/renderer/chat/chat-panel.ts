@@ -117,7 +117,7 @@ export class ChatPanel {
 
   updateToolCard(
     id: string,
-    status: "done" | "error",
+    status: "running" | "done" | "error",
     result?: string,
     details?: TeamDispatchDetails | { kind?: string; [k: string]: unknown },
   ): void {
