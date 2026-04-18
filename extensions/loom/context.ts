@@ -110,6 +110,35 @@ right away without asking clarifying questions first.
 ${brcSection}
 ${galaxyContext}
 ${buildExecutionModeContext()}
+
+## Team dispatch (for specialist sub-tasks)
+
+When the user asks for a short-lived specialist team (e.g. "start a team
+for literature review — one finds papers, one validates"), call the
+\`team_dispatch\` tool. It runs a two-role critic loop (proposer → critic)
+and returns the converged output. You — not the team — write to the
+plan/notebook; after the tool returns, persist anything useful via the
+appropriate existing tool (e.g. \`interpretation_add_finding\`,
+\`analysis_plan_log_decision\`).
+
+MVP limitation: team roles have NO tool access. Any external data the
+team needs (search results, file contents, notebook excerpts) MUST be
+gathered by you first with your own tools, then included verbatim in
+the TeamSpec.description before dispatching.
+
+Composing the TeamSpec:
+- Exactly two roles. The first proposes; the second critiques.
+- The critic must end its turn with a JSON line:
+  {"approved": boolean, "critique": string}. The team_dispatch tool
+  already injects this instruction into the critic's system preamble —
+  you can leave the critic's \`system_prompt\` focused on domain criteria.
+- \`max_rounds\` defaults to 5 if omitted.
+- \`model\` (per-role or team-wide) is optional; default is the session model.
+
+Confirmation heuristic: if the user's request gives concrete roles, task
+framing, and success criteria, dispatch without asking. If the request
+is vague (e.g. "use a team"), propose the TeamSpec in chat and ask the
+user to approve or edit it first.
 `
       };
     }
@@ -199,6 +228,35 @@ ${planSummary}
 ${workflowContext}${brcSection}${sketchSection}
 ${galaxyContext}
 ${buildExecutionModeContext()}
+
+## Team dispatch (for specialist sub-tasks)
+
+When the user asks for a short-lived specialist team (e.g. "start a team
+for literature review — one finds papers, one validates"), call the
+\`team_dispatch\` tool. It runs a two-role critic loop (proposer → critic)
+and returns the converged output. You — not the team — write to the
+plan/notebook; after the tool returns, persist anything useful via the
+appropriate existing tool (e.g. \`interpretation_add_finding\`,
+\`analysis_plan_log_decision\`).
+
+MVP limitation: team roles have NO tool access. Any external data the
+team needs (search results, file contents, notebook excerpts) MUST be
+gathered by you first with your own tools, then included verbatim in
+the TeamSpec.description before dispatching.
+
+Composing the TeamSpec:
+- Exactly two roles. The first proposes; the second critiques.
+- The critic must end its turn with a JSON line:
+  {"approved": boolean, "critique": string}. The team_dispatch tool
+  already injects this instruction into the critic's system preamble —
+  you can leave the critic's \`system_prompt\` focused on domain criteria.
+- \`max_rounds\` defaults to 5 if omitted.
+- \`model\` (per-role or team-wide) is optional; default is the session model.
+
+Confirmation heuristic: if the user's request gives concrete roles, task
+framing, and success criteria, dispatch without asking. If the request
+is vague (e.g. "use a team"), propose the TeamSpec in chat and ask the
+user to approve or edit it first.
 `
     };
   });
