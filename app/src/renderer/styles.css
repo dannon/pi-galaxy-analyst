@@ -401,6 +401,95 @@ body:not(.artifact-collapsed) #artifact-toggle {
   padding: 0;
 }
 
+.message.assistant h1,
+.message.assistant h2,
+.message.assistant h3,
+.message.assistant h4 {
+  margin: 14px 0 6px;
+  color: var(--text-bright);
+  font-weight: 600;
+  line-height: 1.3;
+}
+.message.assistant h1 { font-size: 18px; }
+.message.assistant h2 { font-size: 16px; }
+.message.assistant h3 { font-size: 14px; }
+.message.assistant h4 { font-size: 13px; color: var(--text); }
+
+.message.assistant ul,
+.message.assistant ol {
+  margin: 6px 0 10px;
+  padding-left: 22px;
+}
+
+.message.assistant li {
+  margin: 3px 0;
+  padding-left: 2px;
+}
+
+.message.assistant li > p {
+  margin: 0;
+}
+
+.message.assistant strong {
+  color: var(--text-bright);
+}
+
+.message.assistant blockquote {
+  margin: 8px 0;
+  padding: 4px 12px;
+  border-left: 3px solid var(--border);
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.message.assistant hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 14px 0;
+}
+
+.message.assistant table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-family: var(--font);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  display: block;
+  overflow-x: auto;
+}
+
+.message.assistant table th,
+.message.assistant table td {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.message.assistant table th {
+  background: var(--bg-deep);
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+.message.assistant table tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.message.assistant table tbody tr:hover td {
+  background: var(--bg-hover);
+}
+
+.message.assistant table code {
+  font-size: 11.5px;
+  padding: 0 3px;
+}
+
 .message.system-info {
   background: var(--bg-surface);
   border: 1px solid var(--border);
