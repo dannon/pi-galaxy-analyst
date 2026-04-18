@@ -223,6 +223,224 @@ describe("sketch matching against a plan", () => {
     expect(matches[0].frontmatter.name).toBe("alphagenome-gwas-regulatory");
     expect(matches[0].reason).toContain("exact workflow match");
   });
+
+  it("matches on plan-text keywords against sketch tags (no tools yet)", () => {
+    createPlan({
+      title: "Regulatory GWAS variant analysis",
+      researchQuestion: "Which variants in a credible set drive regulatory effects?",
+      dataDescription: "GWAS summary stats for a single locus",
+      expectedOutcomes: [],
+      constraints: [],
+    });
+    // Note: no steps added -- sketch must match on prose alone.
+
+    const corpus = [parseSketch(ALPHAGENOME_SKETCH)!].map((s, i) => ({
+      ...s,
+      filePath: `/tmp/${i}/SKETCH.md`,
+    }));
+
+    const matches = matchSketchesForPlan(getCurrentPlan()!, corpus);
+    expect(matches).toHaveLength(1);
+    expect(matches[0].reason).toMatch(/tag match|name match/);
+  });
+
+  it("matches on sketch name tokens appearing in plan prose", () => {
+    createPlan({
+      title: "Using AlphaGenome to interpret a credible set",
+      researchQuestion: "What is the causal variant?",
+      dataDescription: "Summary stats",
+      expectedOutcomes: [],
+      constraints: [],
+    });
+
+    const corpus = [parseSketch(ALPHAGENOME_SKETCH)!].map((s, i) => ({
+      ...s,
+      filePath: `/tmp/${i}/SKETCH.md`,
+    }));
+
+    const matches = matchSketchesForPlan(getCurrentPlan()!, corpus);
+    expect(matches).toHaveLength(1);
+    // 'alphagenome' appears as both a sketch tag and a name token in the plan prose.
+    expect(matches[0].score).toBeGreaterThan(0);
+  });
+
+  it("matches on tool-family prefix (same `alphagenome_*` namespace)", () => {
+    createPlan({
+      title: "Interval prediction",
+      researchQuestion: "Q",
+      dataDescription: "D",
+      expectedOutcomes: [],
+      constraints: [],
+    });
+    // Plan uses an alphagenome_ tool the sketch does NOT list directly,
+    // so exact short-name matching should miss and family matching kicks in.
+    addStep({
+      name: "Predict",
+      description: "Interval prediction",
+      executionType: "tool",
+      toolId: "alphagenome_interval_predictor",
+      inputs: [],
+      expectedOutputs: [],
+      dependsOn: [],
+    });
+
+    const corpus = [parseSketch(ALPHAGENOME_SKETCH)!].map((s, i) => ({
+      ...s,
+      filePath: `/tmp/${i}/SKETCH.md`,
+    }));
+
+    const matches = matchSketchesForPlan(getCurrentPlan()!, corpus);
+    expect(matches).toHaveLength(1);
+    expect(matches[0].reason).toContain("tool-family match");
+    // Family hit should carry less weight than an exact tool hit.
+    expect(matches[0].reason).not.toContain("1 tool match");
+  });
+
+  it("gives full tool hits priority over family prefix hits", () => {
+    createPlan({
+      title: "ISM",
+      researchQuestion: "Q",
+      dataDescription: "D",
+      expectedOutcomes: [],
+      constraints: [],
+    });
+    addStep({
+      name: "ISM",
+      description: "",
+      executionType: "tool",
+      toolId: "alphagenome_ism_scanner",
+      inputs: [],
+      expectedOutputs: [],
+      dependsOn: [],
+    });
+
+    const corpus = [parseSketch(ALPHAGENOME_SKETCH)!].map((s, i) => ({
+      ...s,
+      filePath: `/tmp/${i}/SKETCH.md`,
+    }));
+
+    const matches = matchSketchesForPlan(getCurrentPlan()!, corpus);
+    // Exact tool hit (10 pts) should land, prefix hit for the same tool should not double-count.
+    expect(matches[0].reason).toContain("tool match");
+    expect(matches[0].reason).not.toContain("tool-family match");
+  });
+
+  it("does not match on stop words alone", () => {
+    createPlan({
+      title: "Analysis plan for data workflow",
+      researchQuestion: "Run the tool on the data",
+      dataDescription: "Some data",
+      expectedOutcomes: [],
+      constraints: [],
+    });
+
+    const corpus = [parseSketch(ALPHAGENOME_SKETCH)!].map((s, i) => ({
+      ...s,
+      filePath: `/tmp/${i}/SKETCH.md`,
+    }));
+
+    // Every token in the plan is a stop word -- shouldn't match anything.
+    expect(matchSketchesForPlan(getCurrentPlan()!, corpus)).toEqual([]);
+  });
+
+  it("matches hyphenated sketch tags against plan prose with or without the hyphen", () => {
+    const RNA_SEQ_SKETCH = parseSketch(
+      `---
+name: bulk-rnaseq
+tags:
+  - rna-seq
+  - deseq2
+expected_output:
+  - assertions:
+      - DE gene count within tolerance
+---
+
+Body.
+`,
+    )!;
+
+    createPlan({
+      title: "RNA Seq Pasilla analysis",
+      researchQuestion: "Differential expression between treated and untreated",
+      dataDescription: "Paired-end RNA seq reads",
+      expectedOutcomes: [],
+      constraints: [],
+    });
+
+    const corpus = [{ ...RNA_SEQ_SKETCH, filePath: "/tmp/rna/SKETCH.md" }];
+    const matches = matchSketchesForPlan(getCurrentPlan()!, corpus);
+    expect(matches).toHaveLength(1);
+    expect(matches[0].reason).toContain("tag match");
+  });
+
+  it("tokenizes non-ASCII plan prose and sketch names", () => {
+    const UNICODE_SKETCH = parseSketch(
+      `---
+name: mycobactérium-pipeline
+tags:
+  - mycobactérium
+expected_output:
+  - assertions:
+      - Lineage call agrees with TB-Profiler
+---
+
+Body.
+`,
+    )!;
+
+    createPlan({
+      title: "Mycobactérium tuberculosis variant calling",
+      researchQuestion: "Identify resistance mutations in Mycobactérium samples",
+      dataDescription: "Short-read sequencing",
+      expectedOutcomes: [],
+      constraints: [],
+    });
+
+    const corpus = [{ ...UNICODE_SKETCH, filePath: "/tmp/u/SKETCH.md" }];
+    const matches = matchSketchesForPlan(getCurrentPlan()!, corpus);
+    expect(matches.length).toBeGreaterThan(0);
+  });
+
+  it("does not match on short shared tool-id prefixes (below length threshold)", () => {
+    // Concoct a corpus entry whose tool prefix is too short to be distinctive.
+    const SHORT_PREFIX_SKETCH = parseSketch(
+      `---
+name: short-prefix
+tags:
+  - other
+tools:
+  - name: run_this
+  - name: run_that
+expected_output:
+  - assertions:
+      - Claim
+---
+
+Body.
+`,
+    )!;
+
+    createPlan({
+      title: "Another plan",
+      researchQuestion: "Q",
+      dataDescription: "D",
+      expectedOutcomes: [],
+      constraints: [],
+    });
+    addStep({
+      name: "Run",
+      description: "",
+      executionType: "tool",
+      toolId: "run_something_else",
+      inputs: [],
+      expectedOutputs: [],
+      dependsOn: [],
+    });
+
+    const corpus = [{ ...SHORT_PREFIX_SKETCH, filePath: "/tmp/short/SKETCH.md" }];
+    // "run" is 3 chars -- prefix threshold is >= 5, so no family match.
+    expect(matchSketchesForPlan(getCurrentPlan()!, corpus)).toEqual([]);
+  });
 });
 
 describe("renderSketchForPrompt", () => {
@@ -239,5 +457,18 @@ describe("renderSketchForPrompt", () => {
     expect(rendered).toContain("2 tool match(es)");
     expect(rendered).toContain("Top ISM position scored above 3.0");
     expect(rendered).toContain("Run ISM scanner");
+  });
+
+  it("tells the agent how to pre-populate drafts when the sketch has assertions", () => {
+    const parsed = parseSketch(ALPHAGENOME_SKETCH)!;
+    const rendered = renderSketchForPrompt({
+      ...parsed,
+      filePath: "/tmp/SKETCH.md",
+      score: 20,
+      reason: "2 tool match(es)",
+    });
+
+    expect(rendered).toContain("analysis_assertions_from_sketch");
+    expect(rendered).toContain("analysis_assert");
   });
 });

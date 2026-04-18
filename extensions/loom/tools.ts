@@ -62,7 +62,10 @@ import {
   addReportedResult,
   // Parameter overrides
   setStepParameterOverrides,
+  // Sketch-seeded assertion drafts
+  seedAssertionsFromSketchCorpus,
 } from "./state";
+import { loadConfig } from "./config";
 import type {
   StepStatus,
   StepResult,
@@ -2820,7 +2823,11 @@ analyses in Galaxy.`,
         expectedFromPlan: params.expectedFromPlan,
       });
 
-      await syncToNotebook('frontmatter', { updated: new Date().toISOString() });
+      await syncToNotebook('assertion_added', {
+        claim: stored.claim,
+        verdict: stored.verdict,
+        kind: stored.kind,
+      });
 
       return {
         content: [{ type: "text" as const, text: JSON.stringify({ success: true, assertion: stored }) }],
@@ -2830,6 +2837,68 @@ analyses in Galaxy.`,
     renderResult: (result) => {
       const d = result.details as { verdict?: string; kind?: string } | undefined;
       return new Text(`✅ assertion ${d?.kind} → ${d?.verdict}`);
+    },
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Seed draft assertions from a matching sketch's expected outputs
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  pi.registerTool({
+    name: "analysis_assertions_from_sketch",
+    label: "Seed assertions from sketch",
+    description:
+      "Pre-populate draft `analysis_assert` entries from every matching sketch's " +
+      "expected_output[].assertions[]. Drafts land at verdict='pending' with empty " +
+      "expected/observed fields so the analyst can fill them in as the run progresses. " +
+      "Safe to call multiple times -- existing claims are left alone.",
+    parameters: Type.Object({
+      stepId: Type.Optional(Type.String({
+        description: "Attach seeded drafts to this plan step. Omit for plan-level drafts.",
+      })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      if (!getCurrentPlan()) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ success: false, error: "No active plan" }) }],
+          details: { added: 0, skipped: 0, error: "no_active_plan" },
+        };
+      }
+
+      const cfg = loadConfig();
+      if (!cfg.sketchCorpusPath) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ success: false, error: "No sketch corpus configured" }) }],
+          details: { added: 0, skipped: 0, error: "no_corpus" },
+        };
+      }
+
+      try {
+        const result = seedAssertionsFromSketchCorpus({
+          corpusPath: cfg.sketchCorpusPath,
+          stepId: params.stepId,
+        });
+        if (result.added > 0) {
+          await syncToNotebook('assertion_added', {
+            claim: `seeded ${result.added} draft(s) from matching sketches`,
+            verdict: 'pending',
+          });
+        }
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ success: true, added: result.added, skipped: result.skipped }) }],
+          details: { added: result.added, skipped: result.skipped },
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ success: false, error: msg }) }],
+          details: { added: 0, skipped: 0, error: msg },
+        };
+      }
+    },
+    renderResult: (result) => {
+      const d = result.details as { added?: number; skipped?: number } | undefined;
+      return new Text(`🌱 seeded ${d?.added ?? 0} draft assertion(s) (${d?.skipped ?? 0} skipped)`);
     },
   });
 

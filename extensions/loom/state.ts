@@ -54,6 +54,7 @@ import {
 } from "./notebook-writer";
 import { parseNotebook, notebookToPlan } from "./notebook-parser";
 import { commitNotebook, buildCommitMessage, COMMIT_CHANGE_TYPES } from "./git";
+import { loadSketchCorpus, matchSketchesForPlan } from "./sketches";
 
 // Generate simple UUIDs (avoiding external dependency for now)
 function generateId(): string {
@@ -1032,8 +1033,42 @@ export function recordAssertion(params: RecordAssertionParams): Assertion {
     state.currentPlan.assertions = [];
   }
 
+  const now = new Date().toISOString();
+  const verdict = computeAssertionVerdict(
+    params.kind,
+    params.expected,
+    params.observed,
+    params.tolerance,
+  );
+
+  // If a pending draft with this claim already exists (same case-insensitive
+  // text), upgrade it in place rather than appending a duplicate. Lets the
+  // sketch-seeded drafts flow through `analysis_assert` without leaving a
+  // second row behind. Scoped to pending verdicts so recording a fresh claim
+  // that happens to read identically doesn't silently clobber a finalized one.
+  const claimKey = params.claim.toLowerCase().trim();
+  const existingDraft = state.currentPlan.assertions.find(
+    (a) => a.verdict === "pending" && a.claim.toLowerCase().trim() === claimKey,
+  );
+  if (existingDraft) {
+    existingDraft.stepId = params.stepId ?? existingDraft.stepId;
+    existingDraft.claim = params.claim;
+    existingDraft.kind = params.kind;
+    existingDraft.expected = params.expected;
+    existingDraft.observed = params.observed;
+    existingDraft.tolerance = params.tolerance;
+    existingDraft.datasetId = params.datasetId ?? existingDraft.datasetId;
+    existingDraft.source = params.source ?? existingDraft.source;
+    existingDraft.expectedFromPlan = params.expectedFromPlan;
+    existingDraft.verdict = verdict;
+    existingDraft.recordedAt = now;
+    state.currentPlan.updated = now;
+    notifyPlanChange();
+    return existingDraft;
+  }
+
   const assertion: Assertion = {
-    id: `assertion-${state.currentPlan.assertions.length + 1}`,
+    id: generateId(),
     stepId: params.stepId,
     claim: params.claim,
     kind: params.kind,
@@ -1042,9 +1077,49 @@ export function recordAssertion(params: RecordAssertionParams): Assertion {
     tolerance: params.tolerance,
     datasetId: params.datasetId,
     source: params.source,
-    verdict: computeAssertionVerdict(params.kind, params.expected, params.observed, params.tolerance),
-    recordedAt: new Date().toISOString(),
+    verdict,
+    recordedAt: now,
     expectedFromPlan: params.expectedFromPlan,
+  };
+
+  state.currentPlan.assertions.push(assertion);
+  state.currentPlan.updated = now;
+  notifyPlanChange();
+
+  return assertion;
+}
+
+export interface DraftAssertionFromSketchParams {
+  claim: string;
+  source: string;
+  stepId?: string;
+}
+
+/**
+ * Create a pending-verdict assertion from a sketch-derived prose claim.
+ * The researcher fills in `expected` and `observed` later via analysis_assert;
+ * until then the draft stays at verdict="pending" so it shows up in the
+ * verification table as an unresolved item.
+ */
+export function draftAssertionFromSketch(params: DraftAssertionFromSketchParams): Assertion {
+  if (!state.currentPlan) {
+    throw new Error("No active plan");
+  }
+
+  if (!state.currentPlan.assertions) {
+    state.currentPlan.assertions = [];
+  }
+
+  const assertion: Assertion = {
+    id: generateId(),
+    stepId: params.stepId,
+    claim: params.claim,
+    kind: "categorical",
+    expected: "",
+    observed: "",
+    source: params.source,
+    verdict: "pending",
+    recordedAt: new Date().toISOString(),
   };
 
   state.currentPlan.assertions.push(assertion);
@@ -1052,6 +1127,78 @@ export function recordAssertion(params: RecordAssertionParams): Assertion {
   notifyPlanChange();
 
   return assertion;
+}
+
+export interface SeedAssertionsResult {
+  added: number;
+  skipped: number;
+  assertions: Assertion[];
+}
+
+/**
+ * Load the sketch corpus, match it against the current plan, and pre-populate
+ * draft assertions from every matching sketch's expected_output[].assertions[].
+ *
+ * Existing claims (case-insensitive match on claim text) are left alone so
+ * calling this twice is idempotent and doesn't clobber analyst edits.
+ */
+export function seedAssertionsFromSketchCorpus(params: {
+  corpusPath: string;
+  stepId?: string;
+}): SeedAssertionsResult {
+  if (!state.currentPlan) {
+    throw new Error("No active plan");
+  }
+
+  const corpus = loadSketchCorpus(params.corpusPath);
+  if (corpus.length === 0) {
+    return { added: 0, skipped: 0, assertions: [] };
+  }
+
+  const matches = matchSketchesForPlan(state.currentPlan, corpus);
+  if (matches.length === 0) {
+    return { added: 0, skipped: 0, assertions: [] };
+  }
+
+  const existingClaims = new Set(
+    (state.currentPlan.assertions ?? []).map((a) => a.claim.toLowerCase().trim()),
+  );
+
+  const added: Assertion[] = [];
+  let skipped = 0;
+
+  for (const match of matches) {
+    const source = `sketch:${match.frontmatter.name}`;
+    // A malformed expected_output (object instead of array, non-string
+    // assertions, etc.) should only skip that sketch, not abort seeding for
+    // the whole corpus -- the sketch schema is loaded from an external repo.
+    let claims: string[];
+    try {
+      const eoList = Array.isArray(match.frontmatter.expected_output)
+        ? match.frontmatter.expected_output
+        : [];
+      claims = eoList
+        .flatMap((eo: { assertions?: unknown }) =>
+          Array.isArray(eo?.assertions) ? eo.assertions : [],
+        )
+        .filter((c): c is string => typeof c === "string" && c.trim() !== "");
+    } catch (err) {
+      console.warn(`[sketches] skipping malformed expected_output in ${match.frontmatter.name}:`, err);
+      continue;
+    }
+
+    for (const claim of claims) {
+      const key = claim.toLowerCase().trim();
+      if (existingClaims.has(key)) {
+        skipped++;
+        continue;
+      }
+      existingClaims.add(key);
+      added.push(draftAssertionFromSketch({ claim, source, stepId: params.stepId }));
+    }
+  }
+
+  return { added: added.length, skipped, assertions: added };
 }
 
 /**
@@ -1407,7 +1554,8 @@ export async function syncToNotebook(
     | 'interpretation_finding'
     | 'interpretation_summary'
     | 'brc_context_updated'
-    | 'result_reported',
+    | 'result_reported'
+    | 'assertion_added',
   data: Record<string, unknown>
 ): Promise<void> {
   if (!state.notebookPath) {
@@ -1569,6 +1717,16 @@ export async function syncToNotebook(
         // The result is already on state.currentPlan.results; regenerate the
         // notebook so the new Results section appears under the right step
         // (or in the plan-level Results bucket).
+        if (state.currentPlan) {
+          content = generateNotebook(state.currentPlan);
+        }
+        break;
+
+      case 'assertion_added':
+        // The assertion is already on state.currentPlan.assertions; regenerate
+        // the notebook so the verification section (assertions_json block) is
+        // rewritten from current plan state. Frontmatter-only sync wouldn't
+        // touch that section and the parser restores assertions from it.
         if (state.currentPlan) {
           content = generateNotebook(state.currentPlan);
         }

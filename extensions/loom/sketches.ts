@@ -122,11 +122,15 @@ export function matchSketchesForPlan(
 ): MatchedSketch[] {
   const planToolIds = new Set<string>();
   const planToolShortNames = new Set<string>();
+  const planToolPrefixes = new Set<string>();
   for (const step of plan.steps) {
     const id = step.execution.toolId;
     if (!id) continue;
     planToolIds.add(id);
-    planToolShortNames.add(shortToolName(id));
+    const short = shortToolName(id);
+    planToolShortNames.add(short);
+    const prefix = toolPrefix(short);
+    if (prefix) planToolPrefixes.add(prefix);
   }
 
   const planWorkflowId = plan.steps
@@ -137,6 +141,13 @@ export function matchSketchesForPlan(
   if (plan.brcContext?.analysisCategory) {
     planTags.add(plan.brcContext.analysisCategory.toLowerCase());
   }
+
+  // Tokenize the prose on the plan -- research question, data description,
+  // title, step names and descriptions -- so a sketch's tags, domain, or
+  // name tokens can match against what the researcher actually wrote, not
+  // just against tool ids. Keeps matching useful before any tool steps are
+  // even added to the plan.
+  const planKeywords = extractPlanKeywords(plan);
 
   const matched: MatchedSketch[] = [];
   for (const sketch of sketches) {
@@ -158,12 +169,45 @@ export function matchSketchesForPlan(
       reasons.push(`${toolHits.length} tool match(es)`);
     }
 
-    const tagHits = (frontmatter.tags || []).filter((tag) =>
-      planTags.has(tag.toLowerCase()),
+    // Tool-id prefix overlap catches same-family tools that aren't identical.
+    // e.g. sketch lists `alphagenome_ism_scanner`, plan has
+    // `alphagenome_variant_scorer` -- shared `alphagenome` prefix is a real
+    // signal. Requires prefix length >= 5 to avoid matching on "report_".
+    const sketchPrefixes = new Set(
+      (frontmatter.tools || [])
+        .map((t) => toolPrefix(t.name))
+        .filter((p): p is string => Boolean(p)),
     );
+    const prefixHits = [...sketchPrefixes].filter((p) => planToolPrefixes.has(p));
+    // Only credit prefix hits that didn't already land as full tool hits.
+    const prefixOnlyHits = prefixHits.filter(
+      (p) => !toolHits.some((t) => toolPrefix(t.name) === p),
+    );
+    if (prefixOnlyHits.length > 0) {
+      score += prefixOnlyHits.length * 3;
+      reasons.push(`${prefixOnlyHits.length} tool-family match(es)`);
+    }
+
+    const tagHits = (frontmatter.tags || []).filter((tag) => {
+      return planTags.has(tag.toLowerCase()) || tagMatches(tag, planKeywords);
+    });
     if (tagHits.length > 0) {
-      score += tagHits.length;
+      score += tagHits.length * 2;
       reasons.push(`${tagHits.length} tag match(es)`);
+    }
+
+    // Sketch name tokens (e.g. "alphagenome-gwas-regulatory" -> {alphagenome,
+    // gwas, regulatory}) picked up on the plan prose are a weaker signal.
+    const nameTokens = tokenize(frontmatter.name || "");
+    const nameHits = nameTokens.filter((t) => planKeywords.has(t));
+    if (nameHits.length > 0) {
+      score += nameHits.length;
+      reasons.push(`${nameHits.length} name match(es)`);
+    }
+
+    if (frontmatter.domain && tagMatches(frontmatter.domain, planKeywords)) {
+      score += 2;
+      reasons.push("domain match");
     }
 
     if (score > 0) {
@@ -197,6 +241,12 @@ export function renderSketchForPrompt(sketch: MatchedSketch): string {
     for (const a of assertions) {
       lines.push(`- ${a}`);
     }
+    lines.push("");
+    lines.push(
+      "Call `analysis_assertions_from_sketch` once the relevant step is on the plan " +
+      "to pre-populate these as pending drafts. Each later `analysis_assert` call " +
+      "with matching claim text will fill the draft in place with a real verdict.",
+    );
     lines.push("");
   }
 
@@ -250,4 +300,72 @@ function shortToolName(toolId: string): string {
   const parts = toolId.split("/");
   if (parts.length >= 2) return parts[parts.length - 2];
   return toolId;
+}
+
+/**
+ * First underscore-separated segment of a tool's short name. Returns the empty
+ * string (interpreted as "no usable prefix") for segments under 5 characters,
+ * to keep noise words like "report_" or "run_" from producing false family
+ * matches.
+ */
+function toolPrefix(shortName: string): string {
+  const segment = shortName.toLowerCase().split("_")[0];
+  return segment.length >= 5 ? segment : "";
+}
+
+const STOP_WORDS = new Set([
+  "the", "and", "for", "with", "from", "into", "that", "this", "their",
+  "a", "an", "of", "in", "on", "to", "by", "is", "are", "be",
+  "analysis", "analyses", "data", "tool", "tools", "step", "steps",
+  "run", "use", "using", "plan", "workflow", "galaxy",
+  "study", "case", "set", "sets",
+]);
+
+function tokenize(text: string): string[] {
+  // Unicode-aware: split on anything that isn't a letter or number in any
+  // script, so "RNA-seq" tokenizes as ["rna", "seq"] and non-ASCII sketch
+  // metadata (organism names, etc.) survives.
+  return text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((t) => t.length > 2 && !STOP_WORDS.has(t));
+}
+
+/**
+ * Match a sketch tag/domain against the plan keyword bag. Tries the whole
+ * lowercased string first (so `single-cell` can match literal `single-cell`
+ * in a plan that hand-wrote the hyphen), then falls back to any token from
+ * the tag matching a keyword (so `rna-seq` still matches a plan that typed
+ * "RNA seq" or "RNA Seq analysis").
+ */
+function tagMatches(tagOrDomain: string, keywords: Set<string>): boolean {
+  const lower = tagOrDomain.toLowerCase();
+  if (keywords.has(lower)) return true;
+  const tokens = tokenize(tagOrDomain);
+  return tokens.some((t) => keywords.has(t));
+}
+
+/**
+ * Bag of distinctive keywords from everything the researcher has typed about
+ * the plan. Used so a sketch's tags/name/domain can match even before any
+ * tool steps land on the plan.
+ */
+function extractPlanKeywords(plan: AnalysisPlan): Set<string> {
+  const sources: string[] = [
+    plan.title,
+    plan.context.researchQuestion,
+    plan.context.dataDescription,
+    ...plan.context.expectedOutcomes,
+    ...plan.context.constraints,
+  ];
+  for (const step of plan.steps) {
+    sources.push(step.name, step.description);
+  }
+  if (plan.researchQuestion?.hypothesis) {
+    sources.push(plan.researchQuestion.hypothesis);
+  }
+  if (plan.brcContext?.analysisCategory) {
+    sources.push(plan.brcContext.analysisCategory);
+  }
+  return new Set(tokenize(sources.filter(Boolean).join(" ")));
 }

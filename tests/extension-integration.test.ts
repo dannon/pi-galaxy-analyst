@@ -137,6 +137,7 @@ const EXPECTED_TOOLS = [
 
   // Assertions
   "analysis_assert",
+  "analysis_assertions_from_sketch",
 
   // Shell-facing tools (structured widget emitters)
   "report_result",
