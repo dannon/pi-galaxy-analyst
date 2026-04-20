@@ -231,12 +231,6 @@ function buildMenu(): void {
         { role: "copy" },
         { role: "paste" },
         { role: "selectAll" },
-        { type: "separator" },
-        {
-          label: "Preferences...",
-          accelerator: "CmdOrCtrl+,",
-          click: openPreferences,
-        },
       ],
     },
     {
@@ -254,10 +248,10 @@ function buildMenu(): void {
       label: "Help",
       submenu: [
         {
-          label: "Loom Documentation",
+          label: "Orbit Documentation",
           click: () => {
             import("electron").then(({ shell }) => {
-              shell.openExternal("https://github.com/galaxyproject/pi-galaxy-analyst");
+              shell.openExternal("https://github.com/dannon/loom");
             });
           },
         },

@@ -135,6 +135,7 @@ body.artifact-collapsed #chat-pane {
 /* Segmented control (Local | Remote) */
 .seg-control {
   display: flex;
+  flex-shrink: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
@@ -148,6 +149,7 @@ body.artifact-collapsed #chat-pane {
   cursor: pointer;
   font-family: var(--font-sans);
   font-weight: 600;
+  white-space: nowrap;
   transition: background 0.15s, color 0.15s;
 }
 .seg-control button:hover:not(:disabled) {

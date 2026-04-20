@@ -118,7 +118,7 @@ export class AgentManager {
       this.process = spawn("node", args, {
         stdio: ["pipe", "pipe", "pipe"],
         cwd: this.cwd,
-        env: { ...process.env, ...(fresh ? { LOOM_FRESH_SESSION: "1" } : {}) },
+        env: { ...process.env, LOOM_SHELL_KIND: "orbit", ...(fresh ? { LOOM_FRESH_SESSION: "1" } : {}) },
       });
     } catch (err) {
       log("spawn failed:", err);

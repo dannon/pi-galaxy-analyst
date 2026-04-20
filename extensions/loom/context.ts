@@ -222,7 +222,7 @@ ${buildExecutionModeContext()}
 
       ctx.ui.setStatus("galaxy-plan", statusText);
     } else {
-      ctx.ui.setStatus("galaxy-plan", "🔬 Loom ready");
+      ctx.ui.setStatus("galaxy-plan", "Ready");
     }
   });
 }
