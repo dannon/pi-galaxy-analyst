@@ -23,6 +23,12 @@ export interface LoomConfig {
   experiments?: {
     /** Register the experimental team_dispatch tool and its prompt guidance. */
     teamDispatch?: boolean;
+    /**
+     * Register the experimental session-index tools (chat_search,
+     * chat_session_context, chat_find_tool_calls) that query Pi's JSONL
+     * session corpus via a SQLite+FTS5 mirror at ~/.loom/sessions-index.db.
+     */
+    sessionIndex?: boolean;
   };
 }
 

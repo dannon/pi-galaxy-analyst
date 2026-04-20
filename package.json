@@ -29,6 +29,7 @@
   "dependencies": {
     "@mariozechner/pi-coding-agent": "^0.67.3",
     "@sinclair/typebox": "^0.34.49",
+    "better-sqlite3": "^12.9.0",
     "pi-mcp-adapter": "^2.4.0",
     "pi-web-access": "^0.10.6",
     "uuid": "^13.0.0",
@@ -42,6 +43,7 @@
   },
   "devDependencies": {
     "@mariozechner/pi-ai": "^0.67.3",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/uuid": "^11.0.0",
     "typescript": "^6.0.2",
     "vitest": "^4.1.4"
