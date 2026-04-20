@@ -573,6 +573,11 @@ function handleSlashCommand(text: string): boolean {
     return true;
   }
 
+  if (cmd === "summarize" || cmd === "summary") {
+    handleSummarize(text, rest.join(" "));
+    return true;
+  }
+
   if (cmd === "connect") {
     void openPreferences();
     return true;
@@ -588,6 +593,7 @@ function handleSlashCommand(text: string): boolean {
       `<li><code>/plan</code> — show current plan summary</li>` +
       `<li><code>/status</code> — show Galaxy connection status</li>` +
       `<li><code>/notebook</code> — show notebook info</li>` +
+      `<li><code>/summarize [N [M]]</code> — summarize prompts N–M into the notebook</li>` +
       `<li><code>/decisions</code> — show decision log</li>` +
       `<li><code>/connect</code> — open Galaxy connection settings</li>` +
       `<li><code>/help</code> — show this help</li>` +
@@ -597,6 +603,59 @@ function handleSlashCommand(text: string): boolean {
   }
 
   return false; // not a recognized slash command — let it through
+}
+
+/**
+ * /summarize [N [M]] — summarize the chat between prompts N..M into the notebook.
+ *
+ * Accepted forms (numbers extracted in order):
+ *   /summarize              → all prompts so far
+ *   /summarize 3            → just prompt 3
+ *   /summarize 1 3          → prompts 1..3
+ *   /summarize 1-3, 1 to 3, between 1 and 3 → same
+ */
+function handleSummarize(raw: string, argStr: string): void {
+  const total = chat.getPromptCount();
+  if (total === 0) {
+    chat.addUserMessage(raw);
+    chat.addErrorMessage("No prompts yet to summarize.");
+    return;
+  }
+
+  const nums = (argStr.match(/\d+/g) ?? []).map(Number);
+  let from: number, to: number;
+  if (nums.length === 0) { from = 1; to = total; }
+  else if (nums.length === 1) { from = to = nums[0]; }
+  else { from = Math.min(nums[0], nums[1]); to = Math.max(nums[0], nums[1]); }
+
+  if (from < 1 || to > total) {
+    chat.addUserMessage(raw);
+    chat.addErrorMessage(`Out of range. Valid prompts: 1..${total}.`);
+    return;
+  }
+
+  const transcript = chat.getTranscript(from, to);
+  if (!transcript.trim()) {
+    chat.addUserMessage(raw);
+    chat.addErrorMessage(`No content found for prompts ${from}..${to}.`);
+    return;
+  }
+
+  const label = from === to ? `prompt ${from}` : `prompts ${from}–${to}`;
+  const prompt =
+    `Write a concise summary of the conversation covering ${label} ` +
+    `(content provided below), then append it to the notebook using your notebook tools ` +
+    `as a new section titled "Summary of ${label}". Keep the summary brief — bullets preferred ` +
+    `over prose, focused on decisions, findings, and any Galaxy references.\n\n` +
+    `--- Chat transcript (${label}) ---\n` +
+    transcript +
+    `\n--- end transcript ---`;
+
+  chat.addUserMessage(raw);
+  chat.showThinking();
+  statusBadge.textContent = "thinking...";
+  statusBadge.className = "status-badge thinking";
+  window.orbit.prompt(prompt);
 }
 
 /** Ask for confirmation, then wipe both panes + restart agent. */

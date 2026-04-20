@@ -55,6 +55,7 @@ import {
 import { parseNotebook, notebookToPlan } from "./notebook-parser";
 import { commitNotebook, buildCommitMessage, COMMIT_CHANGE_TYPES } from "./git";
 import { loadSketchCorpus, matchSketchesForPlan } from "./sketches";
+import * as fs from "fs";
 
 // Generate simple UUIDs (avoiding external dependency for now)
 function generateId(): string {
@@ -94,6 +95,69 @@ function notifyPlanChange(): void {
   }
 }
 
+// Notebook change listeners for the UI bridge. Fires whenever syncToNotebook
+// writes a new revision to disk, so the shell can refresh the notebook pane.
+type NotebookChangeListener = (markdown: string) => void;
+const notebookChangeListeners: NotebookChangeListener[] = [];
+
+/** Register a callback that fires on every notebook write. Returns unsubscribe function. */
+export function onNotebookChange(listener: NotebookChangeListener): () => void {
+  notebookChangeListeners.push(listener);
+  return () => {
+    const idx = notebookChangeListeners.indexOf(listener);
+    if (idx >= 0) notebookChangeListeners.splice(idx, 1);
+  };
+}
+
+function notifyNotebookChange(markdown: string): void {
+  for (const listener of notebookChangeListeners) {
+    listener(markdown);
+  }
+}
+
+// File watcher — catches direct writes to the notebook (e.g. the agent using
+// a generic Edit/Write tool instead of a syncToNotebook-backed one) so the
+// shell pane still refreshes. Debounced; ui-bridge dedupes by content.
+let currentWatcher: fs.FSWatcher | null = null;
+let watcherPath: string | null = null;
+let watcherDebounce: NodeJS.Timeout | null = null;
+
+function startWatchingNotebook(filePath: string): void {
+  stopWatchingNotebook();
+  if (!fs.existsSync(filePath)) return;
+  try {
+    currentWatcher = fs.watch(filePath, () => {
+      if (watcherDebounce) clearTimeout(watcherDebounce);
+      watcherDebounce = setTimeout(() => {
+        watcherDebounce = null;
+        if (watcherPath && fs.existsSync(watcherPath)) {
+          try {
+            const content = fs.readFileSync(watcherPath, "utf-8");
+            notifyNotebookChange(content);
+          } catch (err) {
+            console.error("notebook watcher read failed:", err);
+          }
+        }
+      }, 60);
+    });
+    watcherPath = filePath;
+  } catch (err) {
+    console.error("failed to start notebook watcher:", err);
+  }
+}
+
+function stopWatchingNotebook(): void {
+  if (watcherDebounce) {
+    clearTimeout(watcherDebounce);
+    watcherDebounce = null;
+  }
+  if (currentWatcher) {
+    try { currentWatcher.close(); } catch { /* ignore */ }
+    currentWatcher = null;
+  }
+  watcherPath = null;
+}
+
 export function getState(): AnalystState {
   return state;
 }
@@ -107,6 +171,7 @@ export function resetState(): void {
     notebookPath: null,
     notebookLoaded: false,
   };
+  stopWatchingNotebook();
 }
 
 /**
@@ -1463,6 +1528,7 @@ export function getNotebookPath(): string | null {
 export function setNotebookPath(path: string | null): void {
   state.notebookPath = path;
   state.notebookLoaded = path !== null;
+  if (path) startWatchingNotebook(path); else stopWatchingNotebook();
 }
 
 /**
@@ -1488,6 +1554,7 @@ export async function loadNotebook(filePath: string): Promise<AnalysisPlan | nul
     state.currentPlan = plan;
     state.notebookPath = filePath;
     state.notebookLoaded = true;
+    startWatchingNotebook(filePath);
 
     // Sync Galaxy state
     if (plan.galaxy.historyId) {
@@ -1519,6 +1586,7 @@ export async function createNotebook(
 
   state.notebookPath = filePath;
   state.notebookLoaded = true;
+  startWatchingNotebook(filePath);
 
   return filePath;
 }
@@ -1734,6 +1802,7 @@ export async function syncToNotebook(
     }
 
     await writeNotebook(state.notebookPath, content);
+    notifyNotebookChange(content);
 
     if (COMMIT_CHANGE_TYPES.has(changeType)) {
       commitNotebook(state.notebookPath, buildCommitMessage(changeType, data));

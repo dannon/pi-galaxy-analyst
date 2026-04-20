@@ -11,6 +11,7 @@ export class ChatPanel {
   private toolCards = new Map<string, HTMLElement>();
   private scrollLocked = true;
   private thinkingEl: HTMLElement | null = null;
+  private promptCounter = 0;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -22,10 +23,27 @@ export class ChatPanel {
   }
 
   addUserMessage(text: string): void {
-    const el = document.createElement("div");
-    el.className = "message user";
-    el.textContent = text;
-    this.container.appendChild(el);
+    const n = ++this.promptCounter;
+    const turn = document.createElement("div");
+    turn.className = "user-turn";
+    turn.dataset.promptNum = String(n);
+
+    const num = document.createElement("div");
+    num.className = "prompt-num";
+    num.textContent = String(n);
+    num.title = `Prompt ${n}`;
+
+    const connector = document.createElement("div");
+    connector.className = "prompt-connector";
+
+    const bubble = document.createElement("div");
+    bubble.className = "message user";
+    bubble.textContent = text;
+
+    turn.appendChild(num);
+    turn.appendChild(connector);
+    turn.appendChild(bubble);
+    this.container.appendChild(turn);
     this.scrollToBottom();
   }
 
@@ -36,6 +54,7 @@ export class ChatPanel {
     this.currentText = "";
     this.toolCards.clear();
     this.thinkingEl = null;
+    this.promptCounter = 0;
   }
 
   showThinking(): void {
@@ -61,6 +80,55 @@ export class ChatPanel {
 
   hasContent(): boolean {
     return this.container.children.length > 0;
+  }
+
+  getPromptCount(): number {
+    return this.promptCounter;
+  }
+
+  /**
+   * Build a plain-text transcript of turns in the inclusive prompt-number range.
+   * Each turn: the user prompt text, then everything that followed until the
+   * next user-turn (assistant messages, tool cards). Used by /summarize.
+   */
+  getTranscript(fromNum: number, toNum: number): string {
+    const lo = Math.min(fromNum, toNum);
+    const hi = Math.max(fromNum, toNum);
+    const children = Array.from(this.container.children) as HTMLElement[];
+    const parts: string[] = [];
+    let activeNum: number | null = null;
+    let buf: string[] = [];
+
+    const flush = () => {
+      if (activeNum !== null && activeNum >= lo && activeNum <= hi) {
+        parts.push(buf.join("\n").trimEnd());
+      }
+      buf = [];
+    };
+
+    for (const el of children) {
+      if (el.classList.contains("user-turn")) {
+        flush();
+        const n = Number(el.dataset.promptNum);
+        activeNum = Number.isFinite(n) ? n : null;
+        const userText = (el.querySelector(".message.user") as HTMLElement | null)?.textContent?.trim() ?? "";
+        if (activeNum !== null) {
+          buf.push(`[Prompt ${activeNum} — user]`);
+          if (userText) buf.push(userText);
+        }
+      } else if (activeNum !== null && activeNum >= lo && activeNum <= hi) {
+        const text = (el.textContent ?? "").trim();
+        if (!text) continue;
+        if (el.classList.contains("message") && el.classList.contains("assistant")) {
+          buf.push(`[Prompt ${activeNum} — assistant]`);
+          buf.push(text);
+        } else {
+          buf.push(text);
+        }
+      }
+    }
+    flush();
+    return parts.join("\n\n---\n\n");
   }
 
   startAssistantMessage(): void {

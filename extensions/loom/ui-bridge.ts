@@ -5,7 +5,13 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { AnalysisPlan, AnalysisStep } from "./types.js";
-import { onPlanChange, formatPlanSummary, getCurrentPlan } from "./state.js";
+import {
+  onPlanChange,
+  onNotebookChange,
+  formatPlanSummary,
+  getCurrentPlan,
+  getNotebookPath,
+} from "./state.js";
 import {
   LoomWidgetKey,
   encodeJsonWidget,
@@ -56,7 +62,7 @@ function emitPlanWidgets(
  */
 export function setupUIBridge(pi: ExtensionAPI): void {
   let latestCtx: ExtensionContext | null = null;
-  const last = { planMd: "", stepsJson: "" };
+  const last = { planMd: "", stepsJson: "", notebookMd: "" };
 
   pi.on("before_agent_start", async (_event, ctx) => {
     latestCtx = ctx;
@@ -69,5 +75,15 @@ export function setupUIBridge(pi: ExtensionAPI): void {
   onPlanChange((plan) => {
     if (!plan || !latestCtx) return;
     emitPlanWidgets(latestCtx, plan, last);
+  });
+
+  // Refresh the notebook pane whenever syncToNotebook writes a new revision.
+  onNotebookChange((content) => {
+    if (!latestCtx) return;
+    if (content === last.notebookMd) return;
+    last.notebookMd = content;
+    const path = getNotebookPath();
+    const header = path ? `> \`${path}\`\n\n` : "";
+    latestCtx.ui.setWidget(LoomWidgetKey.Notebook, encodeMarkdownWidget(header + content));
   });
 }
