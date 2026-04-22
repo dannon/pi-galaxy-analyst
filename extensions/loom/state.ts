@@ -48,7 +48,7 @@ import {
   fileExists,
 } from "./notebook-writer";
 import { parseNotebook, notebookToPlan } from "./notebook-parser";
-import { commitFile, buildCommitMessage, COMMIT_CHANGE_TYPES } from "./git";
+import { commitFile, buildCommitMessage, COMMIT_CHANGE_TYPES, ensureGitRepo } from "./git";
 import { appendActivityEvent, loadActivityLog, resetActivity } from "./activity";
 import { loadSketchCorpus, matchSketchesForPlan } from "./sketches";
 import * as fs from "fs";
@@ -1547,6 +1547,48 @@ export function isNotebookLoaded(): boolean {
 }
 
 /**
+ * Ensure every session has a notebook.md and activity.jsonl in cwd.
+ *
+ * Creates an empty notebook.md if missing, attaches the file-watcher, hydrates
+ * the activity log from disk, and emits the first notebook-change notification
+ * so the Notebook pane paints immediately. If activity.jsonl doesn't exist yet,
+ * logs a session.started event so the Activity pane is never empty after a
+ * session starts.
+ *
+ * Idempotent. Safe to call every session_start.
+ */
+export function initSessionArtifacts(cwd: string): void {
+  const notebookPath = path.join(cwd, "notebook.md");
+  const sessionDir = cwd;
+
+  try {
+    ensureGitRepo(cwd);
+
+    if (!fs.existsSync(notebookPath)) {
+      fs.writeFileSync(notebookPath, "", "utf-8");
+      commitFile(notebookPath, "Initialize notebook");
+    }
+
+    state.notebookPath = notebookPath;
+    state.notebookLoaded = true;
+    startWatchingNotebook(notebookPath);
+    loadActivityLog(sessionDir);
+
+    const content = fs.readFileSync(notebookPath, "utf-8");
+    notifyNotebookChange(content);
+
+    appendActivityEvent(sessionDir, {
+      timestamp: new Date().toISOString(),
+      kind: "session.started",
+      source: "session_bootstrap",
+      payload: { cwd },
+    });
+  } catch (err) {
+    console.error("initSessionArtifacts failed:", err);
+  }
+}
+
+/**
  * Load a notebook from file and restore state
  */
 export async function loadNotebook(filePath: string): Promise<AnalysisPlan | null> {
@@ -1564,6 +1606,7 @@ export async function loadNotebook(filePath: string): Promise<AnalysisPlan | nul
     state.notebookLoaded = true;
     startWatchingNotebook(filePath);
     loadActivityLog(path.dirname(filePath));
+    notifyNotebookChange(content);
 
     // Sync Galaxy state
     if (plan.galaxy.historyId) {
@@ -1597,6 +1640,7 @@ export async function createNotebook(
   state.notebookLoaded = true;
   startWatchingNotebook(filePath);
   loadActivityLog(path.dirname(filePath));
+  notifyNotebookChange(content);
 
   return filePath;
 }

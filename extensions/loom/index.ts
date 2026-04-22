@@ -11,6 +11,7 @@ import { registerPlanTools } from "./tools";
 import { setupContextInjection } from "./context";
 import { setupUIBridge } from "./ui-bridge";
 import { registerSessionLifecycle } from "./session-bootstrap";
+import { registerActivityHooks } from "./activity-hooks";
 import { registerExecutionCommands } from "./execution-commands";
 import { registerTeamTools } from "./teams/tool";
 import { isTeamDispatchEnabled } from "./teams/is-enabled";
@@ -38,6 +39,7 @@ export default function galaxyAnalystExtension(pi: ExtensionAPI): void {
   // ─────────────────────────────────────────────────────────────────────────────
   setupUIBridge(pi);
   registerSessionLifecycle(pi);
+  registerActivityHooks(pi);
 
 
   // ─────────────────────────────────────────────────────────────────────────────

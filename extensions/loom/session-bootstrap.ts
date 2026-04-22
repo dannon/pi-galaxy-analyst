@@ -5,7 +5,7 @@ import {
   resetState,
   findNotebooks,
   loadNotebook,
-  isNotebookLoaded,
+  initSessionArtifacts,
 } from "./state.js";
 import type { AnalysisPlan } from "./types.js";
 import * as fs from "fs";
@@ -18,6 +18,8 @@ export function registerSessionLifecycle(pi: ExtensionAPI): void {
     resetState();
 
     syncSessionJsonlSymlink(ctx);
+
+    initSessionArtifacts(process.cwd());
 
     const freshSession = process.env.LOOM_FRESH_SESSION === "1";
 
@@ -100,7 +102,7 @@ async function restoreSessionState(ctx: ExtensionContext): Promise<void> {
   }
 
   try {
-    if (!isNotebookLoaded()) {
+    if (!getCurrentPlan()) {
       const entries = ctx.sessionManager?.getEntries?.() || [];
       const planEntries = entries.filter(
         (e) => e.type === "custom" && (e as { customType?: string }).customType === "galaxy_analyst_plan"

@@ -133,17 +133,12 @@ all steps, decisions, and results throughout the analysis.`,
         constraints: params.constraints || [],
       });
 
-      // Auto-create notebook for the plan
-      let notebookPath: string | null = null;
-      try {
-        const cwd = process.cwd();
-        ensureGitRepo(cwd);
-        const defaultPath = getDefaultPath(plan.title, cwd);
-        await createNotebook(defaultPath, plan);
-        notebookPath = defaultPath;
-      } catch {
-        // Notebook creation is optional, continue without it
-      }
+      // Plan state is persisted via session entries + activity.jsonl. The
+      // notebook.md in the session dir is user-curated (owned by /summarize
+      // and the agent's Edit calls), so we do NOT clobber it with a plan
+      // template here. Users who want a markdown dump can call
+      // analysis_notebook_create explicitly.
+      const notebookPath = getNotebookPath();
 
       return {
         content: [{

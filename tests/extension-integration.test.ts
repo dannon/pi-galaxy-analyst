@@ -12,7 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import galaxyAnalystExtension from "../extensions/loom/index";
-import { createPlan, getCurrentPlan, resetState } from "../extensions/loom/state";
+import { createPlan, getCurrentPlan, resetState, initSessionArtifacts } from "../extensions/loom/state";
 import { generateNotebook } from "../extensions/loom/notebook-writer";
 
 interface RegisteredTool {
@@ -341,6 +341,7 @@ describe("provenance notebook sync", () => {
 
     const { api, tools } = createFakeExtensionAPI();
     galaxyAnalystExtension(api);
+    initSessionArtifacts(tempDir);
 
     await tools.get("analysis_plan_create")!.execute("1", {
       title: "Provenance Sync Test",
@@ -373,10 +374,11 @@ describe("provenance notebook sync", () => {
 
     const activityPath = path.join(tempDir, "activity.jsonl");
     const raw = await readFile(activityPath, "utf8");
-    const events = raw.trim().split("\n").map((line) => JSON.parse(line));
+    const allEvents = raw.trim().split("\n").map((line) => JSON.parse(line));
+    const events = allEvents.filter((ev) => ev.kind === "plan.mutation");
 
+    expect(events.length).toBeGreaterThan(0);
     for (const ev of events) {
-      expect(ev.kind).toBe("plan.mutation");
       expect(ev.source).toBe("syncToNotebook");
       expect(typeof ev.timestamp).toBe("string");
     }
