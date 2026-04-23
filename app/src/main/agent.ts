@@ -59,7 +59,11 @@ export class AgentManager {
     if (cwd === this.cwd) return false;
     this.cwd = cwd;
     this.hasStartedBefore = false;
-    this.nextStartSkipContinue = true;
+    // Don't force-skip --continue: let start()'s hasExistingSession() check
+    // decide. If the target cwd has a Pi session on disk, we want to resume
+    // it (history replay, prompt numbering preserved). Use /new afterwards
+    // to start fresh in an existing dir.
+    this.nextStartSkipContinue = false;
     this.nextStartIsFresh = false;
     log("switching cwd to", cwd);
     if (this.process) {
