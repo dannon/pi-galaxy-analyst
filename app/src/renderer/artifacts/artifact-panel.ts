@@ -5,8 +5,36 @@
  * - Activity tab: renders a timeline of activity.jsonl events emitted by the brain.
  */
 
-import { marked } from "marked";
+import { Marked } from "marked";
 import type { ShellActivityEvent } from "../../../../shared/loom-shell-contract.js";
+
+// Dedicated Marked instance for the notebook pane. Relative image srcs (e.g.
+// `10_figures/foo.png`) are rewritten to the `orbit-artifact://` scheme served
+// by the main process out of the current analysis cwd. Chat messages keep the
+// default `marked` so agent-authored URLs aren't touched.
+const notebookMarked = new Marked({
+  renderer: {
+    image({ href, title, text }) {
+      const rewritten = rewriteArtifactHref(href);
+      const titleAttr = title ? ` title="${escapeAttr(title)}"` : "";
+      return `<img src="${escapeAttr(rewritten)}" alt="${escapeAttr(text)}"${titleAttr}>`;
+    },
+  },
+});
+
+function rewriteArtifactHref(href: string): string {
+  // Leave absolute URLs and protocol-relative URLs alone.
+  if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(href)) return href;
+  return `orbit-artifact://cwd/${href.replace(/^\/+/, "")}`;
+}
+
+function escapeAttr(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
 
 const NOTEBOOK_EMPTY_HTML = `
   <div class="empty-state">
@@ -51,7 +79,7 @@ export class ArtifactPanel {
     wrapper.className = "result-block notebook-dump";
     const content = document.createElement("div");
     content.className = "result-markdown";
-    content.innerHTML = marked.parse(markdown || "", { async: false }) as string;
+    content.innerHTML = notebookMarked.parse(markdown || "", { async: false }) as string;
     wrapper.appendChild(content);
     this.notebookEl.appendChild(wrapper);
   }

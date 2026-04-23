@@ -1,14 +1,26 @@
-import { app, BrowserWindow, Menu, dialog, powerMonitor, nativeImage } from "electron";
+import { app, BrowserWindow, Menu, dialog, powerMonitor, nativeImage, protocol, net } from "electron";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import * as fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { pathToFileURL } from "node:url";
 import { registerIpcHandlers, confirmCwdChange } from "./ipc-handlers.js";
 import { AgentManager } from "./agent.js";
 import { ProcMonitor } from "./proc-monitor.js";
 
 // Workaround for systems where chrome-sandbox isn't suid root
 app.commandLine.appendSwitch("no-sandbox");
+
+// Custom scheme for serving files out of the current analysis cwd. The renderer
+// rewrites relative <img src> in notebook.md to orbit-artifact://cwd/<path>, and
+// the handler below resolves that against agentManager.getCwd() at request time.
+// Registered BEFORE app is ready so the privilege flags take effect.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "orbit-artifact",
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: true },
+  },
+]);
 
 // Orbit-specific shell state lives in ~/.orbit/ so multiple Loom shells can
 // coexist without stepping on each other. Brain config remains at ~/.loom/.
@@ -273,6 +285,36 @@ app.setName("Orbit");
 
 app.whenReady().then(() => {
   log("app ready");
+
+  // Serve files from the current analysis cwd over orbit-artifact://. Relative
+  // image srcs in notebook.md (e.g. 10_figures/foo.png) are rewritten by the
+  // renderer to orbit-artifact://cwd/10_figures/foo.png and land here.
+  protocol.handle("orbit-artifact", async (req) => {
+    try {
+      const cwd = agentManager?.getCwd();
+      if (!cwd) return new Response(null, { status: 404 });
+      const url = new URL(req.url);
+      const rel = decodeURIComponent(url.pathname.replace(/^\//, ""));
+      if (!rel) return new Response(null, { status: 400 });
+      const abs = path.resolve(cwd, rel);
+      let cwdReal: string;
+      let absReal: string;
+      try {
+        cwdReal = fs.realpathSync(cwd);
+        absReal = fs.realpathSync(abs);
+      } catch {
+        return new Response(null, { status: 404 });
+      }
+      // Refuse anything that escapes the cwd via .. or symlinks.
+      if (absReal !== cwdReal && !absReal.startsWith(cwdReal + path.sep)) {
+        return new Response(null, { status: 403 });
+      }
+      return net.fetch(pathToFileURL(absReal).toString());
+    } catch {
+      return new Response(null, { status: 500 });
+    }
+  });
+
   buildMenu();
   const cwd = getDefaultCwd();
   log("cwd:", cwd);
