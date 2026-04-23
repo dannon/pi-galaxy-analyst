@@ -165,7 +165,7 @@ if (!isInformationalCommand) {
   if (executionMode === "remote" && hasGalaxyCredentials) {
     mcpConfig.mcpServers.galaxy = {
       command: "uvx",
-      args: ["galaxy-mcp"],
+      args: ["galaxy-mcp>=1.4.0"],
       directTools: true,
       env: {
         GALAXY_URL: galaxyUrl,
