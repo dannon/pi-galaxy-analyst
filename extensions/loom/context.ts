@@ -140,10 +140,29 @@ function buildNotebookExcerptBlock(): string {
   return `
 ## Notebook (user-curated notes)
 
-\`${nbPath}\` — this is the researcher's running log. Read it for rationale,
-decisions, and free-form notes that may not be reflected in the structured
-plan state. When the researcher asks you to update the notebook, use Edit/Write
-to append — do NOT regenerate it.
+\`${nbPath}\` — this is the researcher's running log. It is **a plain
+markdown file that already exists** (auto-initialized on session start).
+Read it for rationale, decisions, and free-form notes that may not be
+reflected in the structured plan state.
+
+### When the researcher asks you to "add / append / write something to the notebook"
+
+Open \`${nbPath}\` with the **Edit** (or **Write**) tool and append the
+content directly. That's the whole workflow. Specifically:
+
+- **Do NOT call \`analysis_plan_create\`** just to unlock a notebook write.
+- **Do NOT call \`analysis_notebook_create\`** — it is a legacy tool that
+  still requires a plan and is not needed here; the notebook file exists.
+- **Do NOT add steps, register data files, or create findings** as a
+  prerequisite to writing free-form text or tables. Those tools are for
+  structured plan state, not for notebook prose.
+- \`report_result\` is for showing a typed block in the Results tab — not
+  a substitute for writing into the notebook. If the researcher asked for
+  a table **in the notebook**, use Edit to append markdown table syntax.
+
+Create a plan only when the researcher explicitly asks for one or approves
+a \`\`\`plan\`\`\` draft (see the Plan draft format / Plan execution
+lifecycle sections). Notebook content is independent of plan existence.
 
 ${truncated ? "_(showing trailing excerpt; earlier content elided)_\n\n" : ""}\`\`\`markdown
 ${excerpt}
