@@ -265,6 +265,25 @@ If neither conda nor mamba is installed, tell the user once ("conda/mamba
 not found — per-analysis env convention cannot be used") and ask whether to
 fall back to system tools (non-reproducible) or abort. Do not silently use
 system tools.
+
+### Bash timeouts on long-running tools
+
+Pi's \`bash\` tool's \`timeout\` argument is **optional** and in **seconds**.
+When omitted, the command runs to completion — that is the correct default
+for bioinformatics pipelines whose runtime you cannot reliably predict:
+
+- PGGB / assembly / minimap2 / bwa on WGS / long variant-calling.
+- Conda solves on a fresh env with many bioconda packages.
+
+**Do not guess-cap these at 3600 s** (1 h). A real PGGB pangenome build or
+whole-genome alignment will cross an hour and be killed partway, and you
+will see a truncated result that misleads the interpretation.
+
+When you do need a bound (sanity timeouts on short commands, watchdog on a
+step that should never hang), pick a value generously — at least 4× your
+best estimate of the expected runtime. Anchors: 300 s for quick commands,
+3600 s for short pipelines, 86400 s for overnight pipelines. Prefer
+**omitting \`timeout\` entirely** over capping a pipeline too low.
 `;
 }
 
