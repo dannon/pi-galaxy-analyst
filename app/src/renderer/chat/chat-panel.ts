@@ -100,9 +100,14 @@ export class ChatPanel {
     this.scrollToBottom();
   }
 
-  /** Replay a historical user message with a fixed number (session history restore). */
+  /**
+   * Replay a historical user message with a fixed number (session history
+   * restore). The counter is set, not max'd — replay is authoritative and
+   * passes monotonically increasing numbers, so after the last call the
+   * counter equals the replay's count. Live numbers continue from there.
+   */
   addReplayUserMessage(text: string, promptNum: number): void {
-    this.promptCounter = Math.max(this.promptCounter, promptNum);
+    this.promptCounter = promptNum;
     const turn = document.createElement("div");
     turn.className = "user-turn";
     turn.dataset.promptNum = String(promptNum);
