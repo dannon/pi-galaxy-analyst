@@ -433,6 +433,18 @@ body:not(.files-collapsed) #files-toggle {
   border-radius: 4px;
 }
 
+.file-viewer-pdf-wrap {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  background: var(--bg-deep);
+}
+.file-viewer-pdf-wrap embed {
+  flex: 1;
+  border: 0;
+  background: #fff;
+}
+
 .file-viewer-binary,
 .file-viewer-error {
   padding: 24px;
@@ -1596,6 +1608,33 @@ body:not(.artifact-collapsed) #artifact-toggle {
 
 .pane-tab[hidden] {
   display: none;
+}
+
+/* Closeable tab variant: × button alongside the label. */
+.pane-tab-closeable {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pane-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 14px;
+  line-height: 1;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.pane-tab-close:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
 }
 
 /* Activity timeline entries. */

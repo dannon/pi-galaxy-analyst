@@ -64,6 +64,9 @@ export class ArtifactPanel {
   private tabButtons: HTMLButtonElement[];
   private activeTab: TabKey = "notebook";
 
+  /** Optional callback fired when the user clicks the File-tab close (×). */
+  onFileTabClose: (() => void) | null = null;
+
   constructor() {
     this.notebookEl = document.getElementById("notebook-view")!;
     this.activityEl = document.getElementById("activity-view")!;
@@ -76,11 +79,21 @@ export class ArtifactPanel {
     this.fileTabBtn = fileBtn;
 
     for (const btn of this.tabButtons) {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", (e) => {
+        // Don't switch to the file tab if the user clicked the close (×).
+        const target = e.target as HTMLElement | null;
+        if (target?.classList.contains("pane-tab-close")) return;
         const tab = btn.dataset.tab as TabKey | undefined;
         if (tab) this.selectTab(tab);
       });
     }
+
+    const fileTabClose = document.getElementById("file-tab-close");
+    fileTabClose?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.hideFileTab();
+      this.onFileTabClose?.();
+    });
   }
 
   /** Returns the File tab container so the FileViewer can mount its DOM. */

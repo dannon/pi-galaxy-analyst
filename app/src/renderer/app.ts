@@ -40,6 +40,12 @@ const filesPanel = new FilesPanel(
 );
 const fileViewer = new FileViewer(artifacts.getFileViewContainer());
 
+// File tab × → tear down the viewer and forget the file.
+artifacts.onFileTabClose = () => {
+  fileViewer.close();
+  filesPanel.setSelected(null);
+};
+
 async function openFileFromTree(relPath: string): Promise<void> {
   const res = await window.orbit.readFile(relPath);
   if (!res.ok) {

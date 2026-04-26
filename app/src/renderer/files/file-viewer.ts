@@ -8,17 +8,39 @@
 
 import { marked } from "marked";
 
-type FileKind = "text" | "image" | "binary";
+type FileKind = "text" | "image" | "pdf" | "binary";
 
 const TEXT_EXTS = new Set([
-  ".md", ".txt", ".py", ".json", ".jsonl", ".csv", ".tsv", ".yml", ".yaml",
-  ".toml", ".js", ".ts", ".sh", ".log",
+  // generic
+  ".md", ".txt", ".log", ".rst",
+  // code / config
+  ".py", ".js", ".ts", ".tsx", ".jsx", ".sh", ".rb", ".pl", ".r", ".go", ".rs",
+  ".json", ".jsonl", ".yml", ".yaml", ".toml", ".ini", ".cfg", ".conf",
+  ".xml", ".html", ".htm", ".css",
+  // tabular
+  ".csv", ".tsv", ".tab",
+  // bioinformatics text formats
+  ".fa", ".fasta", ".fna", ".faa", ".ffn",
+  ".fastq", ".fq",
+  ".vcf",
+  ".bed", ".bedgraph", ".wig",
+  ".gff", ".gff3", ".gtf",
+  ".sam",
+  ".pdb", ".cif",
+  ".nwk", ".newick", ".tree",
+  ".phy", ".phylip",
 ]);
 
 const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"]);
 
+const PDF_EXTS = new Set([".pdf"]);
+
 function extOf(path: string): string {
   const base = path.split("/").pop() ?? "";
+  // Handle .gz / .bz2 / .xz / .zst suffixes — strip and look at the inner ext.
+  // (Useful for things like sample.vcf.gz that should still be recognized as
+  // text in spirit; we treat the compressed version as binary because we
+  // can't decompress in the renderer, but exposing the inner ext is harmless.)
   const dot = base.lastIndexOf(".");
   if (dot <= 0) return "";
   return base.slice(dot).toLowerCase();
@@ -29,6 +51,7 @@ function kindOf(path: string): FileKind {
   if (!ext) return "text";                    // no extension → treat as text
   if (TEXT_EXTS.has(ext)) return "text";
   if (IMAGE_EXTS.has(ext)) return "image";
+  if (PDF_EXTS.has(ext)) return "pdf";
   return "binary";
 }
 
@@ -64,6 +87,7 @@ export class FileViewer {
   private editBtn: HTMLButtonElement | null = null;
   private previewBtn: HTMLButtonElement | null = null;
   private currentImageUrl: string | null = null;
+  private currentPdfUrl: string | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -105,6 +129,8 @@ export class FileViewer {
       this.renderText(root, relPath, bytes);
     } else if (this.currentKind === "image") {
       this.renderImage(root, relPath, bytes, size);
+    } else if (this.currentKind === "pdf") {
+      this.renderPdf(root, relPath, bytes, size);
     } else {
       this.renderBinary(root, relPath, size);
     }
@@ -237,6 +263,10 @@ export class FileViewer {
     if (this.currentImageUrl) {
       URL.revokeObjectURL(this.currentImageUrl);
       this.currentImageUrl = null;
+    }
+    if (this.currentPdfUrl) {
+      URL.revokeObjectURL(this.currentPdfUrl);
+      this.currentPdfUrl = null;
     }
   }
 
@@ -419,6 +449,45 @@ export class FileViewer {
     img.src = url;
     img.alt = relPath;
     wrap.appendChild(img);
+
+    root.appendChild(wrap);
+  }
+
+  private renderPdf(
+    root: HTMLElement,
+    relPath: string,
+    bytes: Uint8Array,
+    size: number,
+  ): void {
+    const toolbar = document.createElement("div");
+    toolbar.className = "file-viewer-toolbar";
+    const filename = document.createElement("span");
+    filename.className = "file-viewer-filename";
+    filename.textContent = relPath;
+    filename.title = relPath;
+    toolbar.appendChild(filename);
+    const sizeLabel = document.createElement("span");
+    sizeLabel.className = "file-viewer-status";
+    sizeLabel.textContent = formatBytes(size);
+    toolbar.appendChild(sizeLabel);
+    root.appendChild(toolbar);
+
+    const buffer = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(buffer).set(bytes);
+    const blob = new Blob([buffer], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    this.currentPdfUrl = url;
+
+    // <embed> renders inline via Chromium's built-in PDF viewer; <iframe> as
+    // fallback works in Electron too. Either way, fills the body.
+    const wrap = document.createElement("div");
+    wrap.className = "file-viewer-pdf-wrap";
+
+    const embed = document.createElement("embed");
+    embed.className = "file-viewer-pdf";
+    embed.src = url;
+    embed.type = "application/pdf";
+    wrap.appendChild(embed);
 
     root.appendChild(wrap);
   }

@@ -73,7 +73,10 @@
       <div class="pane-title pane-tabs" id="artifact-tabs">
         <button class="pane-tab active" data-tab="notebook">Notebook</button>
         <button class="pane-tab" data-tab="activity">Activity</button>
-        <button class="pane-tab" data-tab="file" hidden>File</button>
+        <button class="pane-tab pane-tab-closeable" data-tab="file" hidden>
+          <span class="pane-tab-label">File</span>
+          <span class="pane-tab-close" id="file-tab-close" title="Close file">×</span>
+        </button>
       </div>
       <div id="artifact-content">
         <div id="notebook-view" class="pane-body">
