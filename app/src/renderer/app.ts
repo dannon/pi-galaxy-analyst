@@ -614,7 +614,10 @@ window.orbit.onSessionHistory((history) => {
     chat.startAssistantMessage();
     if (seg.text) chat.appendDelta(seg.text);
     if (seg.tools) {
+      // Mirror the live-streaming policy: skip per-tool chat cards on
+      // replay. Only team_dispatch keeps its rich collapsible card.
       for (const t of seg.tools) {
+        if (t.name !== "team_dispatch") continue;
         chat.addToolCard(t.id, t.name);
         chat.updateToolCard(t.id, t.isError ? "error" : "done", t.resultText);
       }
@@ -1250,7 +1253,12 @@ window.orbit.onAgentEvent((event) => {
       chat.hideThinking();
       const name = (event as { toolName?: string }).toolName || "tool";
       const id = (event as { toolCallId?: string }).toolCallId || name;
-      chat.addToolCard(id, name);
+      // Per-tool chat cards are noisy and duplicate what the Activity tab
+      // shows (shell stream + activity.jsonl). Only team_dispatch keeps a
+      // chat card because its collapsible per-turn body is genuinely useful.
+      if (name === "team_dispatch") {
+        chat.addToolCard(id, name);
+      }
       statusBadge.textContent = `running: ${name}`;
       statusBadge.className = "status-badge running";
       break;
@@ -1262,6 +1270,8 @@ window.orbit.onAgentEvent((event) => {
       const details = (partial as { details?: { kind?: string } } | undefined)?.details;
       const args = (event as { args?: Record<string, unknown> }).args;
       const preview = formatArgsPreview(args);
+      // updateToolCard no-ops for tools that never got a card (everything
+      // except team_dispatch).
       chat.updateToolCard(id, "running", preview, details);
       break;
     }
