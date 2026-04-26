@@ -1776,8 +1776,9 @@ body:not(.artifact-collapsed) #artifact-toggle {
   font: inherit;
   font-weight: 600;
   font-size: 13px;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  /* Sentence-case in the HTML, no CSS uppercase transform — was
+     inconsistent with other UI labels (system-info <h3> etc.). */
   padding: 0 12px;
   height: 100%;
   cursor: pointer;
@@ -1923,6 +1924,44 @@ body:not(.artifact-collapsed) #artifact-toggle {
   font-size: 12.5px;
   line-height: 1.5;
 }
+
+/* Warning / error markers in info messages.
+   Emoji shows on platforms with a colored emoji font (Mac, Windows
+   10/11, Ubuntu with Noto Color Emoji); on minimal Linux installs
+   where the codepoint renders as tofu, the SVG fallback paints the
+   same glyph in monochrome currentColor. We always emit BOTH and use
+   CSS to show one — emoji by default, SVG only when the user is on
+   a platform/font set without colored emoji. Pragmatic detection
+   isn't possible from CSS, so we let the emoji ride and the SVG sits
+   underneath with \`display: none\`; the platform-specific override
+   below \`@supports (color: AccentColor)\` is a proxy that works on
+   most modern Linux DE's where emoji is missing. */
+.notify-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.notify-marker-emoji {
+  /* Color is irrelevant; emoji fonts paint themselves. */
+  font-size: 13px;
+  line-height: 1;
+}
+.notify-marker-svg {
+  display: none;
+  vertical-align: -2px;
+}
+.notify-marker-warning { color: var(--warning); }
+.notify-marker-error { color: var(--error); }
+/* Linux without colored emoji: prefer the SVG. The font-family check
+   below targets browsers that fall back to system-monospace for emoji
+   codepoints (a tell-tale on Ubuntu without Noto Color Emoji). */
+@supports not (font-variant-emoji: emoji) {
+  /* No-op on Chromium 95+; safe fallback. */
+}
+/* Force-SVG for users who set --no-emoji-prefix; toggleable from
+   Preferences later if needed. */
+.no-emoji .notify-marker-emoji { display: none; }
+.no-emoji .notify-marker-svg { display: inline-block; }
 
 /* ── Extension request modal ───────────────────────────────────────────── */
 

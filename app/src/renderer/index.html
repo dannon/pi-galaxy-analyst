@@ -4,9 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>orbit</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
@@ -88,7 +85,7 @@
         <div id="notebook-view" class="pane-body">
           <div class="empty-state">
             <p>The notebook is the running log of your analysis — plan, steps, decisions, and Galaxy references — persisted to a markdown file in your working directory and committed to git on every change.</p>
-            <p>It'll appear here once you start a plan. Type <code>/notebook</code> anytime to refresh.</p>
+            <p>It'll appear here once the agent writes to <code>notebook.md</code>, or you can ask it to summarize the conversation so far.</p>
           </div>
         </div>
         <div id="activity-view" class="pane-body hidden">
@@ -356,13 +353,13 @@
       <div class="modal-body">
         <p>This directory already contains an analysis notebook.</p>
         <p>
-          <b>Keep notebook</b> — start a fresh chat, but keep the existing
+          <strong>Keep notebook</strong> — start a fresh chat, but keep the existing
           <code>notebook.md</code> and activity log so you can continue adding to them.
         </p>
         <p>
-          <b>Start fresh</b> — delete <code>notebook.md</code>, <code>activity.jsonl</code>,
+          <strong>Start fresh</strong> — delete <code>notebook.md</code>, <code>activity.jsonl</code>,
           and the session log, then begin a new analysis. The deletion is committed to git,
-          so the old notebook remains recoverable via <code>git show HEAD~1:notebook.md</code>,
+          so the old notebook remains recoverable via <code>git log</code> / <code>git show</code>,
           but from the UI the old analysis is gone.
         </p>
       </div>

@@ -1792,13 +1792,36 @@ window.orbit.onUiRequest((request) => {
     const message = (request as Record<string, unknown>).message as string | undefined;
     const notifyType = (request as Record<string, unknown>).notifyType as string | undefined;
     if (message) {
-      const prefix = notifyType === "warning" ? "⚠️ " : notifyType === "error" ? "❌ " : "";
-      const escaped = (prefix + message).replace(/</g, "&lt;");
+      const escaped = message.replace(/</g, "&lt;");
       // Preserve newlines + indentation for multi-line status/profile dumps.
-      const html = escaped.includes("\n")
+      const body = escaped.includes("\n")
         ? `<div class="notify-preformatted">${escaped}</div>`
         : escaped;
-      chat.addInfoMessage(html);
+      // Type marker: emoji for the bulk of users (Mac, Windows) plus an
+      // inline SVG for Linux/older platforms where the emoji glyph
+      // renders as a tofu box. CSS \`.notify-marker\` hides the emoji
+      // when the SVG is rendering and vice-versa via a fonts-loaded
+      // detector — see notify-marker rules in styles.css.
+      let marker = "";
+      if (notifyType === "warning") {
+        marker =
+          `<span class="notify-marker notify-marker-warning" aria-hidden="true">` +
+          `<span class="notify-marker-emoji">⚠️</span>` +
+          `<svg class="notify-marker-svg" viewBox="0 0 16 16" width="14" height="14">` +
+          `<path d="M8 1.5 L15 14.5 H1 Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>` +
+          `<path d="M8 6.5 V10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>` +
+          `<circle cx="8" cy="12" r="0.8" fill="currentColor"/>` +
+          `</svg></span> `;
+      } else if (notifyType === "error") {
+        marker =
+          `<span class="notify-marker notify-marker-error" aria-hidden="true">` +
+          `<span class="notify-marker-emoji">❌</span>` +
+          `<svg class="notify-marker-svg" viewBox="0 0 16 16" width="14" height="14">` +
+          `<circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/>` +
+          `<path d="M5 5 L11 11 M11 5 L5 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>` +
+          `</svg></span> `;
+      }
+      chat.addInfoMessage(marker + body);
     }
     return;
   }
