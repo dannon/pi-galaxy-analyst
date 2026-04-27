@@ -6,7 +6,7 @@
  * file being text and dirty.
  */
 
-import { marked } from "marked";
+import { renderMarkdown } from "../chat/markdown.js";
 
 type FileKind = "text" | "image" | "pdf" | "binary";
 
@@ -176,7 +176,7 @@ export class FileViewer {
         this.editor.setSelectionRange(Math.min(selStart, cap), Math.min(selEnd, cap));
         // Re-render markdown preview if it's the currently visible pane.
         if (this.preview && !this.preview.classList.contains("hidden")) {
-          this.preview.innerHTML = marked.parse(newText, { async: false }) as string;
+          this.preview.innerHTML = renderMarkdown(newText);
         }
       }
     } else if (this.currentKind === "image") {
@@ -211,7 +211,7 @@ export class FileViewer {
         this.statusEl.className = "file-viewer-status saved";
       }
       if (this.preview && !this.preview.classList.contains("hidden")) {
-        this.preview.innerHTML = marked.parse(newText, { async: false }) as string;
+        this.preview.innerHTML = renderMarkdown(newText);
       }
       banner.remove();
     });
@@ -353,7 +353,7 @@ export class FileViewer {
     if (!this.editor || !this.preview) return;
     if (mode === "preview") {
       // Render preview from current (possibly dirty) editor contents.
-      const html = marked.parse(this.editor.value, { async: false }) as string;
+      const html = renderMarkdown(this.editor.value);
       this.preview.innerHTML = html;
       this.editor.classList.add("hidden");
       this.preview.classList.remove("hidden");

@@ -3,6 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!--
+    CSP: defense-in-depth alongside DOMPurify on every markdown sink.
+    `default-src 'self'` blocks inline scripts; `'unsafe-inline'` on style is
+    accepted because Vite injects styles inline during dev and we sanitize all
+    HTML before it reaches innerHTML. Image sources include orbit-artifact:
+    (notebook figures) and data:/blob: (rendered images, PDFs). Connect-src
+    lets the renderer reach the Vite dev server (ws:) when running `npm start`.
+  -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' orbit-artifact: data: blob:; connect-src 'self' http://localhost:* ws://localhost:*; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none';" />
   <title>orbit</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
@@ -246,9 +255,13 @@
             GitHub repos with Claude-Code-style skills (top-level
             <code>AGENTS.md</code> + nested <code>SKILL.md</code> files). The
             agent fetches them on demand via the <code>skills_fetch</code>
-            tool. <code>galaxy-skills</code> is the default and ships with
-            Loom; you can disable or remove it, but a default is re-seeded
-            if all repos are removed.
+            tool. <strong>Alpha restriction:</strong> only repos under
+            <code>github.com/galaxyproject/*</code> are accepted (the agent
+            treats fetched skills as authoritative instructions, so the
+            allowlist limits prompt-injection surface).
+            <code>galaxy-skills</code> is the default and ships with Loom;
+            you can disable or remove it, but a default is re-seeded if
+            all repos are removed.
           </p>
           <table id="prefs-skills-table" class="prefs-table">
             <thead>

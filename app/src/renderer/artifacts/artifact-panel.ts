@@ -10,6 +10,7 @@
  */
 
 import { Marked } from "marked";
+import { renderMarkdown } from "../chat/markdown.js";
 
 // Dedicated Marked instance for the notebook pane. Relative image srcs (e.g.
 // `10_figures/foo.png`) are rewritten to the `orbit-artifact://` scheme served
@@ -125,7 +126,7 @@ export class ArtifactPanel {
     wrapper.className = "result-block notebook-dump";
     const content = document.createElement("div");
     content.className = "result-markdown";
-    content.innerHTML = notebookMarked.parse(markdown || "", { async: false }) as string;
+    content.innerHTML = renderMarkdown(markdown || "", notebookMarked);
     wrapper.appendChild(content);
     this.notebookEl.appendChild(wrapper);
   }

@@ -1,4 +1,4 @@
-import { marked } from "marked";
+import { renderMarkdown } from "./markdown.js";
 import {
   TEAM_DISPATCH_KIND,
   type TeamDispatchDetails,
@@ -339,7 +339,7 @@ export class ChatPanel {
     const cards = Array.from(this.currentMessage.querySelectorAll(".tool-card"));
 
     const { text, planBlocks } = extractPlanFences(this.currentText);
-    let html = marked.parse(text, { async: false }) as string;
+    let html = renderMarkdown(text);
     html = injectPlanFenceCards(html, planBlocks);
     this.currentMessage.innerHTML = html + '<span class="cursor-blink"></span>';
 
@@ -403,7 +403,7 @@ function injectPlanFenceCards(html: string, planBlocks: string[]): string {
   return html.replace(re, (_m, idxStr: string) => {
     const idx = Number(idxStr);
     const body = planBlocks[idx] ?? "";
-    const bodyHtml = marked.parse(body, { async: false }) as string;
+    const bodyHtml = renderMarkdown(body);
     const bodyAttr = escapeAttr(body);
     return (
       `<div class="plan-draft-card" data-plan-draft-body="${bodyAttr}">` +
