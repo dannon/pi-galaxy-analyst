@@ -1,13 +1,17 @@
 /**
  * Automatic git tracking for analysis notebooks.
  *
- * Uses child_process.execSync directly — no Pi API dependency — so it can
+ * Uses child_process.execFileSync directly — no Pi API dependency — so it can
  * be called from state.ts without threading the extension context through.
  * Every function silently swallows errors: git tracking is nice-to-have,
  * never a reason to break an analysis.
+ *
+ * `execFileSync` (not `execSync`) is the only spawner used here. It bypasses
+ * the shell, so commit messages or filenames containing backticks, $(...),
+ * quotes, or any other shell metacharacters can never be interpreted as code.
  */
 
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { writeFileSync, existsSync } from "fs";
 import * as path from "path";
 
@@ -66,8 +70,8 @@ __pycache__/
 .loom/env/
 `;
 
-function git(args: string, cwd: string): void {
-  execSync(`git ${args}`, { cwd, stdio: "ignore" });
+function git(args: string[], cwd: string): void {
+  execFileSync("git", args, { cwd, stdio: "ignore" });
 }
 
 /**
@@ -76,22 +80,22 @@ function git(args: string, cwd: string): void {
  */
 export function ensureGitRepo(cwd: string): void {
   try {
-    execSync("git rev-parse --is-inside-work-tree", { cwd, stdio: "ignore" });
+    execFileSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd, stdio: "ignore" });
     return; // already a repo
   } catch {
     // not a repo — fall through to init
   }
 
   try {
-    git("init", cwd);
+    git(["init"], cwd);
 
     const gitignorePath = path.join(cwd, ".gitignore");
     if (!existsSync(gitignorePath)) {
       writeFileSync(gitignorePath, GITIGNORE_CONTENT);
     }
 
-    git("add .gitignore", cwd);
-    git('commit -m "Initialize analysis tracking"', cwd);
+    git(["add", ".gitignore"], cwd);
+    git(["commit", "-m", "Initialize analysis tracking"], cwd);
   } catch {
     // git not installed or init failed — silently give up
   }
@@ -105,8 +109,8 @@ export function commitFile(filePath: string, message: string): void {
   try {
     const cwd = path.dirname(filePath);
     const filename = path.basename(filePath);
-    git(`add "${filename}"`, cwd);
-    git(`commit -m "${message.replace(/"/g, '\\"')}"`, cwd);
+    git(["add", filename], cwd);
+    git(["commit", "-m", message], cwd);
   } catch {
     // nothing to commit, or git not available
   }
