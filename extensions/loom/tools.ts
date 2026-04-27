@@ -34,6 +34,43 @@ import {
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { parse as parseHtml } from "node-html-parser";
+
+/**
+ * Strip a GTN tutorial HTML document down to readable plain text.
+ *
+ * Replaces the prior regex-based stripper, which could be defeated by
+ * malformed HTML (e.g. an unterminated `<script` tag would leak its
+ * contents through the `<script>...</script>` regex). Using a real
+ * parser closes that gap and is more robust to GTN page-layout drift.
+ */
+function stripGtnHtml(html: string): string {
+  const root = parseHtml(html, {
+    blockTextElements: { script: false, style: false, noscript: false, code: true, pre: true },
+  });
+  // Drop chrome we don't want in the agent's context.
+  for (const sel of ["script", "style", "nav", "header", "footer", "aside", "noscript"]) {
+    for (const el of root.querySelectorAll(sel)) el.remove();
+  }
+  // Pick the most-specific body region available.
+  const body =
+    root.querySelector("main") ||
+    root.querySelector("article") ||
+    root.querySelector(".tutorial-content") ||
+    root.querySelector("body") ||
+    root;
+  let text = body.textContent || "";
+  text = text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_m, code) => String.fromCharCode(Number(code)));
+  text = text.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  return text;
+}
 
 /**
  * Resolve a GitHub repo URL like
@@ -241,34 +278,7 @@ analyses in Galaxy.`,
         }
 
         const html = await response.text();
-
-        const stripped = html
-          .replace(/<script[\s\S]*?<\/script>/gi, '')
-          .replace(/<style[\s\S]*?<\/style>/gi, '')
-          .replace(/<nav[\s\S]*?<\/nav>/gi, '')
-          .replace(/<header[\s\S]*?<\/header>/gi, '')
-          .replace(/<footer[\s\S]*?<\/footer>/gi, '');
-
-        let body = stripped;
-        const mainMatch = stripped.match(/<main[\s\S]*?>([\s\S]*?)<\/main>/i)
-          || stripped.match(/<article[\s\S]*?>([\s\S]*?)<\/article>/i)
-          || stripped.match(/<div[^>]+class="[^"]*tutorial-content[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/i);
-        if (mainMatch) {
-          body = mainMatch[1];
-        }
-
-        let text = body.replace(/<[^>]+>/g, ' ');
-
-        text = text
-          .replace(/&amp;/g, '&')
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&quot;/g, '"')
-          .replace(/&#39;/g, "'")
-          .replace(/&nbsp;/g, ' ')
-          .replace(/&#(\d+);/g, (_m, code) => String.fromCharCode(Number(code)));
-
-        text = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+        const text = stripGtnHtml(html);
 
         return {
           content: [{
