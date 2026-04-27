@@ -127,9 +127,45 @@ export function registerIpcHandlers(agent: AgentManager): void {
     },
   );
 
+  // Top-level config keys the renderer is allowed to set. Anything else
+  // submitted via config:save is dropped before saveConfig() runs — the
+  // renderer is the smaller trust boundary, so a markdown XSS that
+  // managed to call window.orbit.saveConfig should not be able to plant
+  // arbitrary keys (which would be picked up after the brain restart at
+  // the bottom of this handler).
+  const ALLOWED_CONFIG_KEYS: ReadonlySet<string> = new Set([
+    "llm",
+    "galaxy",
+    "executionMode",
+    "defaultCwd",
+    "skills",
+    "condaBin",
+    "experiments",
+  ]);
+
+  function sanitizeConfig(input: unknown): LoomConfig {
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      throw new Error("config:save expects an object payload");
+    }
+    const out: Record<string, unknown> = {};
+    const dropped: string[] = [];
+    for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+      if (ALLOWED_CONFIG_KEYS.has(k)) {
+        out[k] = v;
+      } else {
+        dropped.push(k);
+      }
+    }
+    if (dropped.length > 0) {
+      log("config:save dropped unknown keys:", dropped);
+    }
+    return out as LoomConfig;
+  }
+
   ipcMain.handle("config:save", async (_e, config: LoomConfig) => {
     try {
-      saveConfig(config);
+      const safe = sanitizeConfig(config);
+      saveConfig(safe);
       log("config saved");
       // Restart agent subprocess to pick up new provider/model/API key
       agent.stop();
