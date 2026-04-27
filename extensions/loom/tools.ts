@@ -34,7 +34,17 @@ import {
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import * as crypto from "crypto";
 import { parse as parseHtml } from "node-html-parser";
+
+/**
+ * Short stable tag derived from `${url}@${branch}` for the skills-cache
+ * directory. 8 hex chars is comfortably more than the namespace needs to
+ * distinguish a handful of repos, and short enough to keep paths tidy.
+ */
+function createSkillsCacheTag(url: string, branch: string): string {
+  return crypto.createHash("sha256").update(`${url}@${branch}`).digest("hex").slice(0, 8);
+}
 
 /**
  * Strip a GTN tutorial HTML document down to readable plain text.
@@ -360,7 +370,12 @@ omitted, the first enabled repo is used (typically \`galaxy-skills\`).`,
         };
       }
 
-      const cacheDir = path.join(os.homedir(), ".loom", "cache", "skills", repo.name);
+      // Cache key includes a hash of url@branch so changing either invalidates
+      // the cache implicitly. Without this, a repo whose URL was edited (or
+      // whose branch was switched) keeps serving 24h of stale content from
+      // the old upstream because cache lookup keyed only on repo.name.
+      const cacheTag = createSkillsCacheTag(repo.url, repo.branch);
+      const cacheDir = path.join(os.homedir(), ".loom", "cache", "skills", `${repo.name}@${cacheTag}`);
       const cachePath = path.join(cacheDir, cleanPath);
       const ttlMs = 24 * 60 * 60 * 1000;
       try {
