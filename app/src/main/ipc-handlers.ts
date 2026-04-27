@@ -1,6 +1,6 @@
 import { ipcMain, dialog, BrowserWindow, shell } from "electron";
 import type { AgentManager } from "./agent.js";
-import { startFilesWatcher } from "./files-handler.js";
+import { startFilesWatcher, resolveWithin } from "./files-handler.js";
 import { loadSessionHistory } from "./session-replay.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -222,20 +222,41 @@ export function registerIpcHandlers(agent: AgentManager): void {
 
   ipcMain.handle("file:open", async (_e, filePath: string) => {
     log("open file:", filePath);
-    const ext = path.extname(filePath).toLowerCase();
+
+    // Path clamp: the renderer can pass any string here, including paths
+    // outside the analysis cwd. Always go through resolveWithin so a
+    // markdown link or compromised renderer can't ask us to open
+    // /etc/passwd or a privileged HTML file in a new BrowserWindow.
+    let absPath: string;
+    try {
+      absPath = resolveWithin(agent.getCwd(), filePath);
+    } catch (err) {
+      log("file:open rejected — escapes cwd:", filePath);
+      return { opened: false, error: String(err) };
+    }
+    const ext = path.extname(absPath).toLowerCase();
+
     // HTML files → new Electron window (so user can view reports)
     if (ext === ".html" || ext === ".htm") {
       const win = new BrowserWindow({
         width: 1200,
         height: 900,
-        title: path.basename(filePath),
-        webPreferences: { sandbox: true },
+        title: path.basename(absPath),
+        webPreferences: {
+          // Hardened: no preload bridge, no Node, sandbox on, web
+          // security on, isolated context. The opened HTML is treated
+          // like any untrusted web page.
+          sandbox: true,
+          contextIsolation: true,
+          nodeIntegration: false,
+          webSecurity: true,
+        },
       });
-      await win.loadURL("file://" + filePath);
+      await win.loadFile(absPath);
       return { opened: true };
     }
     // Everything else → system default app
-    const err = await shell.openPath(filePath);
+    const err = await shell.openPath(absPath);
     if (err) return { opened: false, error: err };
     return { opened: true };
   });

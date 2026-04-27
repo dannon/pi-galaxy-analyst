@@ -43,8 +43,12 @@ const MAX_READ_BYTES = 5 * 1024 * 1024; // 5 MB — protect the renderer from hu
 /**
  * Clamp a user-supplied path to the current cwd. Throws if it escapes.
  * Returns the absolute, normalized path.
+ *
+ * Exported because file:open in ipc-handlers.ts uses the same security
+ * boundary — the renderer must never be able to ask main to open a file
+ * outside the current analysis cwd.
  */
-function resolveWithin(cwd: string, relPath: string): string {
+export function resolveWithin(cwd: string, relPath: string): string {
   const normalized = path.normalize(relPath || "");
   const abs = path.resolve(cwd, normalized);
   const rel = path.relative(cwd, abs);
