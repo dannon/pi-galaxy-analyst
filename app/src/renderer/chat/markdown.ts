@@ -12,23 +12,16 @@
  */
 
 import { marked, type Marked } from "marked";
-import * as DOMPurifyMod from "dompurify";
+import DOMPurify, { type Config } from "dompurify";
 
-// `dompurify` exports a CJS namespace; the runtime value is the function
-// itself, while types live under `DOMPurify.*`. Star-import gives us both.
-const purify = DOMPurifyMod as unknown as typeof DOMPurifyMod & {
-  sanitize(html: string, cfg: DOMPurifyMod.Config): string;
-  addHook(name: string, cb: (n: Element) => void): void;
-};
-
-const PURIFY_CONFIG: DOMPurifyMod.Config = {
+const PURIFY_CONFIG: Config = {
   USE_PROFILES: { html: true },
   ALLOWED_URI_REGEXP:
     /^(?:(?:https?|mailto|tel|data:image|orbit-artifact):|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i,
   ADD_ATTR: ["target"],
 };
 
-purify.addHook("afterSanitizeAttributes", (node) => {
+DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   if (node instanceof HTMLAnchorElement && node.hasAttribute("href")) {
     node.setAttribute("target", "_blank");
     node.setAttribute("rel", "noopener noreferrer");
@@ -37,5 +30,5 @@ purify.addHook("afterSanitizeAttributes", (node) => {
 
 export function renderMarkdown(text: string, instance: Marked | typeof marked = marked): string {
   const html = instance.parse(text, { async: false }) as string;
-  return purify.sanitize(html, PURIFY_CONFIG);
+  return DOMPurify.sanitize(html, PURIFY_CONFIG);
 }
