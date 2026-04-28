@@ -4,6 +4,37 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import type { BrowserWindow } from "electron";
+import { loadConfig } from "./config.js";
+import { resolveLlmApiKey, resolveGalaxyApiKey } from "./secure-config.js";
+
+const PROVIDER_ENV_MAP: Record<string, string> = {
+  anthropic: "ANTHROPIC_API_KEY",
+  openai: "OPENAI_API_KEY",
+  google: "GEMINI_API_KEY",
+  mistral: "MISTRAL_API_KEY",
+  groq: "GROQ_API_KEY",
+  xai: "XAI_API_KEY",
+};
+
+/** Build the secret env vars injected into the brain subprocess. */
+function buildSecretEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  const cfg = loadConfig();
+
+  const llmKey = resolveLlmApiKey(cfg);
+  if (llmKey) {
+    const provider = cfg.llm?.provider || "anthropic";
+    const envVar = PROVIDER_ENV_MAP[provider] || "AI_GATEWAY_API_KEY";
+    env[envVar] = llmKey;
+  }
+
+  const galaxyKey = resolveGalaxyApiKey(cfg);
+  if (galaxyKey) {
+    env.GALAXY_API_KEY = galaxyKey;
+  }
+
+  return env;
+}
 
 // Resolve the loom entry point relative to the app
 const LOOM_BIN = path.resolve(__dirname, "../../../bin/loom.js");
@@ -115,10 +146,19 @@ export class AgentManager {
     log("starting agent", { bin: LOOM_BIN, cwd: this.cwd, continue: args.includes("--continue"), fresh });
 
     try {
+      // Decrypted API keys flow to the brain via env so the child never reads
+      // plaintext from disk. buildSecretEnv re-reads config each spawn so
+      // key rotation in the settings UI takes effect on restart without
+      // needing to plumb explicit invalidation.
       this.process = spawn("node", args, {
         stdio: ["pipe", "pipe", "pipe"],
         cwd: this.cwd,
-        env: { ...process.env, LOOM_SHELL_KIND: "orbit", ...(fresh ? { LOOM_FRESH_SESSION: "1" } : {}) },
+        env: {
+          ...process.env,
+          LOOM_SHELL_KIND: "orbit",
+          ...buildSecretEnv(),
+          ...(fresh ? { LOOM_FRESH_SESSION: "1" } : {}),
+        },
       });
     } catch (err) {
       log("spawn failed:", err);

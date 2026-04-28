@@ -6,6 +6,7 @@ import os from "node:os";
 import { registerIpcHandlers, confirmCwdChange } from "./ipc-handlers.js";
 import { AgentManager } from "./agent.js";
 import { ProcMonitor } from "./proc-monitor.js";
+import { migratePlaintextSecrets, isAvailable as safeStorageAvailable } from "./secure-config.js";
 
 // Workaround for systems where chrome-sandbox isn't suid root
 app.commandLine.appendSwitch("no-sandbox");
@@ -267,6 +268,21 @@ app.setName("Orbit");
 app.whenReady().then(() => {
   log("app ready");
   buildMenu();
+
+  // Migrate any plaintext API keys in ~/.loom/config.json to ciphertext. Must
+  // run before the agent spawns so the brain sees env-injected decrypted keys
+  // rather than the old plaintext.
+  if (safeStorageAvailable()) {
+    try {
+      const result = migratePlaintextSecrets();
+      if (result.migrated) log("migrated plaintext secrets → safeStorage");
+    } catch (err) {
+      log("secret migration failed:", err);
+    }
+  } else {
+    log("safeStorage unavailable — keys remain plaintext on disk");
+  }
+
   const cwd = getDefaultCwd();
   log("cwd:", cwd);
   createWindow(cwd);

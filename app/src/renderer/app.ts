@@ -301,8 +301,8 @@ welcomeSave.addEventListener("click", async () => {
 });
 
 async function checkFirstRun(): Promise<void> {
-  const cfg = (await window.orbit.getConfig()) as { llm?: { apiKey?: string } };
-  if (!cfg.llm?.apiKey) {
+  const cfg = (await window.orbit.getConfig()) as { llm?: { hasApiKey?: boolean } };
+  if (!cfg.llm?.hasApiKey) {
     populateWelcomeModels(welcomeProvider.value);
     welcomeOverlay.classList.remove("hidden");
   }
@@ -1272,24 +1272,34 @@ const prefsGalaxyKey = document.getElementById("prefs-galaxy-key") as HTMLInputE
 const prefsDefaultCwd = document.getElementById("prefs-default-cwd") as HTMLInputElement;
 const prefsCondaBin = document.getElementById("prefs-conda-bin") as HTMLSelectElement;
 
+/** Sentinel mirrors UNCHANGED_SECRET in main/ipc-handlers.ts. */
+const UNCHANGED_SECRET = "__loom_unchanged_secret__";
+/** Tracks whether a key is already on disk so blank-input = unchanged, not clear. */
+let prefsLlmHadKey = false;
+let prefsGalaxyHadKey = false;
+
 async function openPreferences(): Promise<void> {
   const config = await window.orbit.getConfig() as {
-    llm?: { provider?: string; apiKey?: string; model?: string };
-    galaxy?: { active: string | null; profiles: Record<string, { url: string; apiKey: string }> };
+    llm?: { provider?: string; model?: string; hasApiKey?: boolean };
+    galaxy?: { active: string | null; profiles: Record<string, { url: string; hasApiKey?: boolean }> };
     defaultCwd?: string;
     condaBin?: string;
   };
 
   prefsProvider.value = config.llm?.provider || "anthropic";
   populateModels(prefsProvider.value, config.llm?.model);
-  prefsApiKey.value = config.llm?.apiKey || "";
+  prefsLlmHadKey = Boolean(config.llm?.hasApiKey);
+  prefsApiKey.value = "";
+  prefsApiKey.placeholder = prefsLlmHadKey ? "•••••••• (unchanged)" : "";
 
   // Galaxy: use active profile
   const activeProfile = config.galaxy?.active
     ? config.galaxy.profiles?.[config.galaxy.active]
     : null;
   prefsGalaxyUrl.value = activeProfile?.url || "";
-  prefsGalaxyKey.value = activeProfile?.apiKey || "";
+  prefsGalaxyHadKey = Boolean(activeProfile?.hasApiKey);
+  prefsGalaxyKey.value = "";
+  prefsGalaxyKey.placeholder = prefsGalaxyHadKey ? "•••••••• (unchanged)" : "";
 
   prefsDefaultCwd.value = config.defaultCwd || "";
   prefsCondaBin.value = config.condaBin || "auto";
@@ -1302,42 +1312,48 @@ function closePreferences(): void {
 }
 
 async function savePreferences(): Promise<void> {
-  // Preserve existing config (galaxy profiles) and merge
-  const current = await window.orbit.getConfig() as {
-    llm?: { provider?: string; apiKey?: string; model?: string };
-    galaxy?: { active: string | null; profiles: Record<string, { url: string; apiKey: string }> };
-    defaultCwd?: string;
-    condaBin?: string;
+  // Build a delta — only fields the user can edit. Main reconciles secrets
+  // against what's on disk; the sentinel preserves a stored key when the
+  // user left the input blank.
+  const typedApiKey = prefsApiKey.value.trim();
+  const llmApiKey = typedApiKey
+    ? typedApiKey
+    : prefsLlmHadKey
+    ? UNCHANGED_SECRET
+    : "";
+
+  const typedGalaxyKey = prefsGalaxyKey.value.trim();
+  const galaxyUrl = prefsGalaxyUrl.value.trim();
+  const galaxyApiKey = typedGalaxyKey
+    ? typedGalaxyKey
+    : prefsGalaxyHadKey
+    ? UNCHANGED_SECRET
+    : "";
+
+  const config: Record<string, unknown> = {
+    llm: {
+      provider: prefsProvider.value,
+      model: prefsModel.value || undefined,
+      apiKey: llmApiKey,
+    },
   };
 
-  const config: typeof current = { ...current };
-
-  config.llm = {
-    provider: prefsProvider.value,
-    model: prefsModel.value || undefined,
-    apiKey: prefsApiKey.value.trim() || undefined,
-  };
-
-  // Galaxy: save as "default" profile
-  if (prefsGalaxyUrl.value.trim() || prefsGalaxyKey.value.trim()) {
+  if (galaxyUrl || prefsGalaxyHadKey || typedGalaxyKey) {
     config.galaxy = {
       active: "default",
       profiles: {
-        ...(current.galaxy?.profiles || {}),
         default: {
-          url: prefsGalaxyUrl.value.trim(),
-          apiKey: prefsGalaxyKey.value.trim(),
+          url: galaxyUrl,
+          apiKey: galaxyApiKey,
         },
       },
     };
-  } else {
-    delete config.galaxy;
   }
 
   config.defaultCwd = prefsDefaultCwd.value.trim() || undefined;
   config.condaBin = (prefsCondaBin.value as "auto" | "mamba" | "conda") || undefined;
 
-  const result = await window.orbit.saveConfig(config as Record<string, unknown>);
+  const result = await window.orbit.saveConfig(config);
   if (result.success) {
     closePreferences();
     chat.addUserMessage("[system] Preferences saved. Agent restarted.");

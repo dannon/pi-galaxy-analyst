@@ -25,5 +25,10 @@ export function loadConfig() {
 export function saveConfig(config) {
   const dir = getConfigDir();
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(getConfigPath(), JSON.stringify(config, null, 2) + "\n");
+  const p = getConfigPath();
+  fs.writeFileSync(p, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
+  // writeFileSync honors mode only on create; enforce on existing files too.
+  try {
+    fs.chmodSync(p, 0o600);
+  } catch {}
 }

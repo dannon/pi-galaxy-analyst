@@ -1,12 +1,24 @@
 export interface LoomConfig {
   llm?: {
     provider?: string;
+    /** Plaintext API key. Orbit migrates this to apiKeyEncrypted on startup. */
     apiKey?: string;
+    /** Base64 ciphertext produced by Electron safeStorage. Orbit-only. */
+    apiKeyEncrypted?: string;
     model?: string;
   };
   galaxy?: {
     active: string | null;
-    profiles: Record<string, { url: string; apiKey: string }>;
+    profiles: Record<
+      string,
+      {
+        url: string;
+        /** Plaintext API key. Orbit migrates to apiKeyEncrypted on startup. */
+        apiKey?: string;
+        /** Base64 ciphertext produced by Electron safeStorage. Orbit-only. */
+        apiKeyEncrypted?: string;
+      }
+    >;
   };
   executionMode?: "local" | "remote";
   defaultCwd?: string;

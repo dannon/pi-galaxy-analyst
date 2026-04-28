@@ -2,6 +2,108 @@ import { ipcMain, dialog, BrowserWindow, shell } from "electron";
 import type { AgentManager } from "./agent.js";
 import path from "node:path";
 import { loadConfig, saveConfig, type LoomConfig } from "./config.js";
+import { encryptSecret, isAvailable as safeStorageAvailable } from "./secure-config.js";
+
+/**
+ * Sentinel the renderer sends back in a secret field when the user did NOT
+ * change it. Main preserves whatever is already on disk in that case.
+ */
+export const UNCHANGED_SECRET = "__loom_unchanged_secret__";
+
+/** Masked shape returned to the renderer — never carries plaintext secrets. */
+interface MaskedLoomConfig extends Omit<LoomConfig, "llm" | "galaxy"> {
+  llm?: {
+    provider?: string;
+    model?: string;
+    hasApiKey: boolean;
+  };
+  galaxy?: {
+    active: string | null;
+    profiles: Record<string, { url: string; hasApiKey: boolean }>;
+  };
+}
+
+function maskConfig(cfg: LoomConfig): MaskedLoomConfig {
+  const { llm: _llm, galaxy: _galaxy, ...rest } = cfg;
+  const masked: MaskedLoomConfig = { ...rest };
+  if (cfg.llm) {
+    masked.llm = {
+      provider: cfg.llm.provider,
+      model: cfg.llm.model,
+      hasApiKey: Boolean(cfg.llm.apiKey || cfg.llm.apiKeyEncrypted),
+    };
+  }
+  if (cfg.galaxy) {
+    masked.galaxy = {
+      active: cfg.galaxy.active,
+      profiles: Object.fromEntries(
+        Object.entries(cfg.galaxy.profiles).map(([k, v]) => [
+          k,
+          { url: v.url, hasApiKey: Boolean(v.apiKey || v.apiKeyEncrypted) },
+        ])
+      ),
+    };
+  }
+  return masked;
+}
+
+/**
+ * Reconcile the renderer-supplied config against what's on disk, encrypting
+ * any newly-supplied plaintext secrets and preserving unchanged ones.
+ */
+function reconcileIncomingConfig(incoming: Record<string, unknown>): LoomConfig {
+  const current = loadConfig();
+  const canEncrypt = safeStorageAvailable();
+  const out: LoomConfig = { ...current, ...(incoming as LoomConfig) };
+
+  // LLM key reconciliation
+  const incomingLlm = (incoming as { llm?: { apiKey?: string } }).llm;
+  if (incomingLlm) {
+    const rawKey = incomingLlm.apiKey;
+    const mergedLlm: LoomConfig["llm"] = {
+      provider: (incoming as { llm?: { provider?: string } }).llm?.provider,
+      model: (incoming as { llm?: { model?: string } }).llm?.model,
+    };
+    if (rawKey === UNCHANGED_SECRET || rawKey === undefined) {
+      // Preserve whatever was on disk.
+      if (current.llm?.apiKeyEncrypted) mergedLlm.apiKeyEncrypted = current.llm.apiKeyEncrypted;
+      if (current.llm?.apiKey) mergedLlm.apiKey = current.llm.apiKey;
+    } else if (rawKey === "") {
+      // Explicit clear — drop both fields.
+    } else if (canEncrypt) {
+      mergedLlm.apiKeyEncrypted = encryptSecret(rawKey);
+    } else {
+      mergedLlm.apiKey = rawKey;
+    }
+    out.llm = mergedLlm;
+  }
+
+  // Galaxy profile reconciliation (per profile)
+  type GalaxyConfig = NonNullable<LoomConfig["galaxy"]>;
+  const incomingGalaxy = (incoming as { galaxy?: GalaxyConfig }).galaxy;
+  if (incomingGalaxy) {
+    const mergedProfiles: GalaxyConfig["profiles"] = {};
+    for (const [name, p] of Object.entries(incomingGalaxy.profiles || {})) {
+      const existing = current.galaxy?.profiles?.[name];
+      const rawKey = p.apiKey;
+      const profile: (typeof mergedProfiles)[string] = { url: p.url };
+      if (rawKey === UNCHANGED_SECRET || rawKey === undefined) {
+        if (existing?.apiKeyEncrypted) profile.apiKeyEncrypted = existing.apiKeyEncrypted;
+        if (existing?.apiKey) profile.apiKey = existing.apiKey;
+      } else if (rawKey === "") {
+        // Explicit clear — drop both fields.
+      } else if (canEncrypt) {
+        profile.apiKeyEncrypted = encryptSecret(rawKey);
+      } else {
+        profile.apiKey = rawKey;
+      }
+      mergedProfiles[name] = profile;
+    }
+    out.galaxy = { active: incomingGalaxy.active, profiles: mergedProfiles };
+  }
+
+  return out;
+}
 
 function log(...args: unknown[]): void {
   console.log("[ipc]", ...args);
@@ -96,12 +198,13 @@ export function registerIpcHandlers(agent: AgentManager): void {
   });
 
   ipcMain.handle("config:get", () => {
-    return loadConfig();
+    return maskConfig(loadConfig());
   });
 
-  ipcMain.handle("config:save", async (_e, config: LoomConfig) => {
+  ipcMain.handle("config:save", async (_e, incoming: Record<string, unknown>) => {
     try {
-      saveConfig(config);
+      const reconciled = reconcileIncomingConfig(incoming);
+      saveConfig(reconciled);
       log("config saved");
       // Restart agent subprocess to pick up new provider/model/API key
       agent.stop();

@@ -13,7 +13,10 @@ import { loadConfig, saveConfig } from "./config";
 
 export interface GalaxyProfile {
   url: string;
-  apiKey: string;
+  /** Plaintext API key. Orbit migrates this to apiKeyEncrypted on next startup. */
+  apiKey?: string;
+  /** Base64 ciphertext produced by Electron safeStorage (Orbit-only). */
+  apiKeyEncrypted?: string;
 }
 
 export interface GalaxyProfiles {
@@ -87,8 +90,14 @@ export function switchProfile(name: string): boolean {
   writeProfiles(profiles);
 
   process.env.GALAXY_URL = profile.url;
-  process.env.GALAXY_API_KEY = profile.apiKey;
-  syncMcpConfig(profile.url, profile.apiKey);
+  // If the profile only has an encrypted key, the brain can't decrypt it —
+  // leave GALAXY_API_KEY alone so the Orbit-injected env value keeps working.
+  if (profile.apiKey) {
+    process.env.GALAXY_API_KEY = profile.apiKey;
+    syncMcpConfig(profile.url, profile.apiKey);
+  } else if (process.env.GALAXY_API_KEY) {
+    syncMcpConfig(profile.url, process.env.GALAXY_API_KEY);
+  }
   return true;
 }
 

@@ -203,6 +203,25 @@ function checkLLMProvider() {
   ];
   if (providerEnvVars.some(v => process.env[v])) return;
 
+  // Config has an encrypted key but this CLI can't decrypt it — Electron's
+  // safeStorage lives in the Orbit main process. Point the user at the two
+  // working paths instead of falling through to the generic error.
+  if (loomConfig.llm?.apiKeyEncrypted) {
+    console.error(`loom: your ~/.loom/config.json has an encrypted API key
+(apiKeyEncrypted), but the standalone CLI cannot decrypt it — that only
+works inside Orbit.
+
+Do one of the following:
+
+  • Launch via Orbit (\`cd app && npm start\`), which decrypts and injects
+    ANTHROPIC_API_KEY (or the provider-specific variable) into the brain.
+
+  • Export the key for this shell:
+      export ANTHROPIC_API_KEY=sk-ant-...
+`);
+    process.exit(1);
+  }
+
   const authPath = join(agentDir, "auth.json");
   if (existsSync(authPath)) {
     try {
