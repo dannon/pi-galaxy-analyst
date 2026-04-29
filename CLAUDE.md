@@ -32,9 +32,6 @@ npx vitest run path/to/test
 npm run typecheck
 cd app && npx tsc --noEmit
 
-# Provenance regression
-npm run validate:provenance
-
 # Start Orbit
 cd app && npm start
 ```

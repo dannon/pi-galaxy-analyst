@@ -37,8 +37,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit",
-    "validate:provenance": "vitest run tests/extension-integration.test.ts -t \"provenance notebook sync\""
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@mariozechner/pi-ai": "^0.70.0",

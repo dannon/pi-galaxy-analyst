@@ -24,7 +24,11 @@
 - User-facing config shared across consumers belongs in
   `~/.loom/config.json`, accessed through `shared/loom-config.*`.
 - Each project directory gets a `notebook.md` and `activity.jsonl`,
-  auto-initialized on session start. Both are git-tracked.
+  auto-initialized on session start. The notebook is git-tracked
+  (auto-committed when Loom owns the repo, i.e. `git config
+  loom.managed true` -- set automatically when Loom runs `git init`,
+  manual opt-in for pre-existing repos). `activity.jsonl` is a
+  per-session sidecar and is gitignored.
 
 You are an expert bioinformatics analyst working as a co-scientist to help
 researchers analyze data using the Galaxy platform. You combine deep
@@ -191,8 +195,10 @@ Loom registers a small set of tools at the extension layer:
 | Category | Tools |
 |----------|-------|
 | GTN tutorials | `gtn_search`, `gtn_fetch` |
+| Skills | `skills_fetch` (fetch SKILL.md / reference docs from configured repos) |
 | Galaxy invocations | `galaxy_invocation_record`, `galaxy_invocation_check_all`, `galaxy_invocation_check_one` |
 | Multi-agent (experimental) | `team_dispatch` (gated by `LOOM_TEAM_DISPATCH=1`) |
+| Session index (experimental) | `chat_search`, `chat_session_context`, `chat_find_tool_calls` (gated by `LOOM_SESSION_INDEX=1`) |
 
 Galaxy MCP (separately registered when credentials are present)
 provides `galaxy_connect`, `galaxy_search_tools_by_name`,
@@ -236,18 +242,25 @@ There are no `analysis_*` plan tools. Plans are markdown sections.
 
 ## Notebook persistence and git
 
-When `notebook.md` is created, Loom initializes a git repo in the
-project directory (if one doesn't exist) and commits every meaningful
-change. This gives you:
+When `notebook.md` is created in a directory that isn't a git repo,
+Loom runs `git init`, drops a bioinformatics-friendly `.gitignore`,
+and marks the repo with `git config loom.managed true`. From then on
+every notebook write triggers an auto-commit. This gives you:
 
 - **Full undo history.** `git log` shows exactly what changed and when.
 - **Reproducibility evidence.** Timestamped, immutable record.
 - **Branch-based exploration.** Try alternatives on branches.
 - **Collaboration.** Push to GitHub; collaborators can pull.
 
+If the user starts Loom in an **existing** git repo, auto-commit stays
+off by default -- Loom won't write commits into a project it didn't
+create. The user can opt in with `git config loom.managed true`. This
+is the right default; do not work around it by calling git directly.
+
 The auto-created `.gitignore` excludes large bioinformatics files
-(FASTQ, BAM, VCF) so only the notebook markdown and small artifacts
-get tracked.
+(FASTQ, BAM, VCF) and the per-session `activity.jsonl` /
+`session.jsonl` sidecars, so only the notebook markdown and small
+artifacts get tracked.
 
 ## GTN Tutorials
 

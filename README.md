@@ -48,10 +48,11 @@ The notebook is the durable state. Plans, decisions, results, and interpretation
 Implemented and locally tested.
 
 - TypeScript typecheck passes (root + Orbit).
-- Local automated suite: 45 tests passing (notebook I/O, invocation YAML round-trip, team-dispatch, Galaxy config).
-- Notebook is the source of truth — there is no parallel plan struct to drift from it.
+- Local automated suite: 117 tests passing (notebook I/O, invocation YAML round-trip, profile / credential handling, team-dispatch, session-index, Galaxy config).
+- Notebook is the source of truth -- there is no parallel plan struct to drift from it.
 - Galaxy invocation polling is exercised against the deterministic state-transition rules (`all-ok → completed`, `any-error → failed`).
-- Skills system fetches on demand from `galaxyproject/galaxy-skills` (shipped as default) plus any user-configured repos.
+- Skills system fetches on demand from `galaxyproject/galaxy-skills` (shipped as default). Additional skill repos are restricted to `github.com/galaxyproject/*` for the alpha (skill content is treated as authoritative agent instructions, so an arbitrary third-party repo would be a prompt-injection vector).
+- Galaxy API keys are encrypted at rest in Orbit via Electron `safeStorage`; the brain receives the decrypted key as an env var at spawn time. CLI users without `safeStorage` fall back to plaintext on disk.
 - End-to-end validation against a live Galaxy server is in progress.
 
 ### What Orbit ships today
@@ -153,14 +154,20 @@ The polling tool `galaxy_invocation_check_all` scans the notebook for in-flight 
 
 ### Git-tracked notebooks
 
-When Loom initializes `notebook.md` it sets up a git repo in the working directory (if one doesn't already exist) and commits every meaningful change. You get:
+When Loom starts in a directory that isn't already a git repo, it runs `git init`, drops a bioinformatics-friendly `.gitignore`, and marks the repo with `git config loom.managed true`. From then on every notebook write triggers an auto-commit, giving you:
 
 - **Full undo history.** `git log` shows what changed and when.
 - **Reproducibility evidence.** Timestamped, immutable record of every decision.
 - **Branch-based exploration.** Try an alternative on a branch; compare with `git diff`.
 - **Collaboration.** Push the repo to GitHub; collaborators pull, review, and continue.
 
-The auto-created `.gitignore` excludes large bioinformatics files (FASTQ, BAM, VCF, etc.) so only the notebook markdown and small artifacts get tracked.
+If you start Loom in an **existing** git repo, auto-commit stays off by default -- Loom won't write commits into a project it didn't create. Opt in with:
+
+```bash
+git config loom.managed true
+```
+
+The auto-created `.gitignore` excludes large bioinformatics files (FASTQ, BAM, VCF, etc.) plus the per-session `activity.jsonl` and `session.jsonl` sidecars, so only the notebook markdown and small artifacts get tracked.
 
 ## Skills system
 
@@ -175,20 +182,22 @@ Loom can fetch operational know-how from curated GitHub repos following the Clau
 - **Galaxy tool development**
 - **Updating ToolShed tool revisions**
 
-Add your own repos in **Preferences → Skills**. Each entry is `{ name, url, branch?, enabled? }` against any GitHub repo. Examples:
+Add your own repos in **Preferences → Skills**. Each entry is `{ name, url, branch?, enabled? }`. For the alpha, the URL allowlist is `https://github.com/galaxyproject/*` (the agent treats fetched SKILL.md content as authoritative instructions, so arbitrary repos are a prompt-injection vector). Example:
 
 ```json
 {
   "skills": {
     "repos": [
       { "name": "galaxy-skills", "url": "https://github.com/galaxyproject/galaxy-skills", "enabled": true },
-      { "name": "lab-protocols", "url": "https://github.com/your-org/lab-protocols", "enabled": true }
+      { "name": "galaxy-genome-skills", "url": "https://github.com/galaxyproject/galaxy-genome-skills", "branch": "main", "enabled": true }
     ]
   }
 }
 ```
 
-Fetched files cache to `~/.loom/cache/skills/<repo-name>/<path>` with a 24-hour TTL — covers offline use and reduces network round-trips on repeated reads.
+Loosening the allowlist means editing `ALLOWED_SKILLS_PREFIX` in `shared/loom-config.js`. Plan: a per-repo signing / pinning model before opening this up.
+
+Fetched files cache to `~/.loom/cache/skills/<repo-name>/<path>` with a 24-hour TTL -- covers offline use and reduces network round-trips on repeated reads.
 
 ## Install
 
@@ -399,7 +408,16 @@ Loom uses a single brain-level config at `~/.loom/config.json`. Every consumer (
 }
 ```
 
-All sections are optional. If `llm` is missing, consumers fall back to environment variables or OAuth login. If `galaxy` is missing, use `/connect` to add a server interactively — credentials save to the config automatically. Galaxy MCP registers whenever credentials are present; the agent decides per-plan whether to use Galaxy. If `skills` is missing or empty, `galaxy-skills` is lazy-seeded.
+All sections are optional. If `llm` is missing, consumers fall back to environment variables or OAuth login. If `galaxy` is missing, use `/connect` to add a server interactively -- credentials save to the config automatically. Galaxy MCP registers whenever credentials are present; the agent decides per-plan whether to use Galaxy. If `skills` is missing or empty, `galaxy-skills` is lazy-seeded.
+
+#### Galaxy credential storage
+
+Galaxy profiles are stored in `~/.loom/config.json` under `galaxy.profiles.<name>`. The exact field depends on which shell wrote them:
+
+- **Orbit** -- writes `apiKeyEncrypted` (base64 ciphertext from Electron `safeStorage`). The decrypted key is injected into the brain process as `GALAXY_API_KEY` at spawn time. If a brain-side `/connect` writes a plaintext `apiKey`, Orbit's config watcher re-encrypts it within milliseconds.
+- **CLI** (no `safeStorage` available) -- writes `apiKey` in plaintext. The file mode is tightened to `0600`, but the key sits at rest. Acceptable for a workstation; not appropriate for shared hosts.
+
+The brain itself never decrypts. If only `apiKeyEncrypted` is present and `GALAXY_API_KEY` isn't in the environment, the brain logs a clear warning at startup and refuses to send Galaxy requests rather than firing the wrong key.
 
 Orbit-specific state (window geometry, pane preferences, prompt history) lives in `~/.orbit/` so multiple shells can coexist without stepping on each other.
 
