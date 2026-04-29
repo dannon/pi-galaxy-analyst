@@ -169,7 +169,7 @@ resources before deciding what runs where:
   inventing a local workaround.
 - **Workflow invocation**: a single run of a Galaxy workflow on a
   history. Tracked in the notebook via \`loom-invocation\` blocks.
-- **IWC**: Intergalactic Workflow Commons — registry of curated
+- **IWC**: Intergalactic Workflow Commission — registry of curated
   workflows. \`galaxy_search_iwc\` queries it.
 
 The three operating modes are an *outcome* of the plan you draft, not a
