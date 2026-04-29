@@ -82,6 +82,14 @@ export interface OrbitAPI {
   onProcUpdate(callback: (procs: ProcInfo[]) => void): () => void;
   onSessionHistory(callback: (history: ReplaySegment[]) => void): () => void;
   replayChat(): Promise<{ ok: true; segments: number } | { ok: false; error: string }>;
+  listAllModels(): Promise<
+    | { ok: true; providers: Record<string, Array<{
+        id: string;
+        label: string;
+        pricing: { input: number; output: number; cacheRead?: number; cacheWrite?: number };
+      }>> }
+    | { ok: false; error: string }
+  >;
 }
 
 const api: OrbitAPI = {
@@ -167,6 +175,8 @@ const api: OrbitAPI = {
   },
 
   replayChat: () => ipcRenderer.invoke("chat:replay"),
+
+  listAllModels: () => ipcRenderer.invoke("models:list-all"),
   onSessionHistory: (callback) => {
     const handler = (_e: unknown, history: ReplaySegment[]) => callback(history);
     ipcRenderer.on("agent:session-history", handler);
