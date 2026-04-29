@@ -3,7 +3,7 @@ import { createInterface } from "node:readline";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
-import type { BrowserWindow } from "electron";
+import { app, type BrowserWindow } from "electron";
 import { loadConfig } from "./config.js";
 import { resolveLlmApiKey, resolveGalaxyApiKey } from "./secure-config.js";
 import { loadSessionHistory } from "./session-replay.js";
@@ -37,8 +37,20 @@ function buildSecretEnv(): Record<string, string> {
   return env;
 }
 
-// Resolve the loom entry point relative to the app
-const LOOM_BIN = path.resolve(__dirname, "../../../bin/loom.js");
+// Resolve the loom entry point. In dev (`electron-forge start`), Loom lives at
+// the repo root next to app/. In packaged builds, the prePackage hook stages
+// Loom into Resources/loom/ via electron-packager's extraResource so the brain
+// runs out of an installed bundle, not a path that walks up out of the .app.
+// `app` is undefined when this module is imported outside an Electron runtime
+// (e.g. vitest), so optional-chain through `app.isPackaged` to fall back to dev.
+function resolveLoomBin(): string {
+  if (app?.isPackaged) {
+    return path.join(process.resourcesPath, "loom", "bin", "loom.js");
+  }
+  return path.resolve(__dirname, "../../../bin/loom.js");
+}
+
+const LOOM_BIN = resolveLoomBin();
 
 export type AgentStatus = "running" | "stopped" | "error";
 
