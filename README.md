@@ -203,10 +203,19 @@ Fetched files cache to `~/.loom/cache/skills/<repo-name>/<path>` with a 24-hour 
 
 ## Install
 
-### Quick path — CLI only
+Three paths, depending on what you want.
+
+### Desktop app (Orbit)
+
+Orbit ships as a native installer (signed DMG on macOS, AppImage/deb on Linux, installer on Windows) and bundles its own Node runtime, `uv`, and Loom -- so there are no separate prerequisites. Once a build is signed and published, install it from the [Releases page](https://github.com/galaxyproject/pi-galaxy-analyst/releases). Until then, use the developer install below.
+
+### Loom CLI from npm
+
+Run the brain on the command line without Orbit. Requires Node 20+ and (for Galaxy MCP) [uv](https://docs.astral.sh/uv/).
 
 ```bash
 npm install -g @galaxyproject/loom
+loom
 ```
 
 Or run without installing:
@@ -215,13 +224,13 @@ Or run without installing:
 npx @galaxyproject/loom
 ```
 
-You'll also need [uv](https://docs.astral.sh/uv/) for the Galaxy MCP server (invoked automatically via `uvx`):
+Install `uv` if you don't already have it:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### Full install — CLI + Orbit
+### Developer install (build from source)
 
 Clone the repo and install both workspaces:
 
@@ -244,6 +253,8 @@ Or use the CLI:
 node bin/loom.js                       # from repo root
 ```
 
+The developer install needs Node 20+ and `uv` on `PATH`. Per-OS bootstrap below.
+
 #### Linux (Ubuntu/Debian)
 
 ```bash
@@ -259,7 +270,7 @@ nvm install --lts
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Then the "Full install" steps above.
+Then the developer install steps above.
 
 #### macOS
 
@@ -270,7 +281,7 @@ Then the "Full install" steps above.
 brew install node git uv
 ```
 
-Then the "Full install" steps above.
+Then the developer install steps above.
 
 #### Windows (WSL2)
 
