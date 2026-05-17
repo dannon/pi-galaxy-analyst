@@ -1,6 +1,8 @@
 name: release
 
-# Triggered by pushing a tag matching v* (e.g. v0.1.0-alpha.1).
+# Triggered by pushing a tag matching v* (e.g. v0.1.0-alpha.1), or manually
+# via workflow_dispatch (handy for re-running on the same tag without
+# inventing a new one).
 # Builds platform-specific Orbit installers and attaches them to a draft
 # GitHub Release. Promote the draft to a published release manually.
 
@@ -8,6 +10,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
